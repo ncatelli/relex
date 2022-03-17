@@ -1,2 +1,2 @@
 # relex
-A lexer for the first principles project
+A lexer generator for the first principles project.
