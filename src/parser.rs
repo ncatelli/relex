@@ -59,9 +59,9 @@ fn subexpression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::SubE
 
 fn subexpression_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::SubExpressionItem>
 {
-    parcel::or(r#match().map(Into::into), || {
-        parcel::or(group().map(Into::into), || {
-            parcel::or(anchor().map(Into::into), || backreference().map(Into::into))
+    parcel::or(group().map(|g| g).map(Into::into), || {
+        parcel::or(backreference().map(Into::into), || {
+            parcel::or(anchor().map(Into::into), || r#match().map(Into::into))
         })
     })
 }
@@ -76,7 +76,7 @@ fn group<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Group> {
     ))
     .and_then(|non_capturing| {
         parcel::join(
-            expression(),
+            expression().map(|expr| expr),
             parcel::right(parcel::join(
                 expect_character(')'),
                 parcel::optional(quantifier()),
@@ -150,7 +150,9 @@ fn match_character_class<'a>(
 }
 
 fn match_character<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::MatchCharacter> {
-    char().map(ast::MatchCharacter)
+    char()
+        .predicate(|c| ![')', '|'].contains(&c.as_char()))
+        .map(ast::MatchCharacter)
 }
 
 // Character Classes
@@ -441,6 +443,7 @@ mod tests {
 
         for input in inputs {
             let parse_result = parse(&input);
+            println!("{:#?}", &parse_result);
             assert!(parse_result.is_ok())
         }
     }
