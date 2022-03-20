@@ -1,4 +1,4 @@
-use parcel::parsers::character::{alphabetic, any_character, digit, expect_character};
+use parcel::parsers::character::{alphabetic, digit, expect_character};
 use parcel::prelude::v1::*;
 
 use crate::ast;
@@ -429,7 +429,41 @@ fn letters<'a>() -> impl Parser<'a, &'a [(usize, char)], ast::Letters> {
 }
 
 fn char<'a>() -> impl Parser<'a, &'a [(usize, char)], ast::Char> {
-    any_character().map(ast::Char)
+    any_character_escaped().map(ast::Char)
+}
+
+fn any_character_escaped<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
+    move |input: &'a [(usize, char)]| match input.get(0..2) {
+        Some(&[(escape_pos, '\\'), (to_escape_pos, to_escape)]) => {
+            match char_to_escaped_equivalent(to_escape) {
+                Some(escaped_char) => Ok(MatchStatus::Match {
+                    span: escape_pos..to_escape_pos + 1,
+                    remainder: &input[2..],
+                    inner: escaped_char,
+                }),
+                None => Ok(MatchStatus::NoMatch(input)),
+            }
+        }
+        // discard the lookahead.
+        Some(&[(next_pos, next), _]) => Ok(MatchStatus::Match {
+            span: next_pos..next_pos + 1,
+            remainder: &input[1..],
+            inner: next,
+        }),
+        _ => Ok(MatchStatus::NoMatch(input)),
+    }
+}
+
+fn char_to_escaped_equivalent(c: char) -> Option<char> {
+    match c {
+        'n' => Some('\n'),
+        't' => Some('\t'),
+        'r' => Some('\r'),
+        '\'' => Some('\''),
+        '\"' => Some('\"'),
+        '\\' => Some('\\'),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
