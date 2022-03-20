@@ -4,19 +4,151 @@ use parcel::prelude::v1::*;
 use crate::ast;
 
 pub enum ParseErr {
-    Undefined(&'static str),
+    InvalidRegex,
+    Undefined(String),
 }
 
 impl std::fmt::Debug for ParseErr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Undefined(err) => write!(f, "undefined parse error: {}", err),
+            Self::InvalidRegex => write!(f, "provided regex is invalid",),
         }
     }
 }
 
-pub fn parse(input: &[(usize, char)]) -> Result<(), ParseErr> {
-    todo!()
+pub fn parse(input: &[(usize, char)]) -> Result<ast::Regex, ParseErr> {
+    regex()
+        .parse(input)
+        .map_err(|err| ParseErr::Undefined(format!("unspecified parse error occured: {}", err)))
+        .and_then(|ms| match ms {
+            MatchStatus::Match { inner, .. } => Ok(inner),
+            MatchStatus::NoMatch(..) => Err(ParseErr::InvalidRegex),
+        })
+}
+
+fn regex<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Regex> {
+    parcel::join(
+        parcel::optional(start_of_string_anchor()).map(|anchored| anchored.is_some()),
+        expression(),
+    )
+    .map(|(anchored, expression)| match anchored {
+        true => ast::Regex::StartOfStringAnchored(expression),
+        false => ast::Regex::Unanchored(expression),
+    })
+}
+
+// Expression
+
+fn expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Expression> {
+    parcel::join(
+        subexpression(),
+        parcel::zero_or_more(parcel::right(parcel::join(
+            expect_character('|'),
+            subexpression(),
+        ))),
+    )
+    .map(|(head, tail)| vec![head].into_iter().chain(tail).collect())
+    .map(ast::Expression)
+}
+
+fn subexpression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::SubExpression> {
+    parcel::one_or_more(subexpression_item()).map(ast::SubExpression)
+}
+
+fn subexpression_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::SubExpressionItem>
+{
+    parcel::or(r#match().map(Into::into), || {
+        parcel::or(group().map(Into::into), || {
+            parcel::or(anchor().map(Into::into), || backreference().map(Into::into))
+        })
+    })
+}
+
+// Group
+
+fn group<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Group> {
+    parcel::join(
+        parcel::right(parcel::join(
+            expect_character('('),
+            parcel::optional(group_non_capturing_modifier())
+                .map(|non_capturing| non_capturing.is_some()),
+        )),
+        parcel::join(
+            expression(),
+            parcel::right(parcel::join(
+                expect_character(')'),
+                parcel::optional(quantifier()),
+            )),
+        ),
+    )
+    .map(
+        |(is_non_capturing, (expression, quantifier))| match (is_non_capturing, quantifier) {
+            (true, None) => ast::Group::NonCapturing { expression },
+            (true, Some(quantifier)) => ast::Group::NonCapturingWithQuantifier {
+                expression,
+                quantifier,
+            },
+            (false, None) => ast::Group::Capturing { expression },
+            (false, Some(quantifier)) => ast::Group::CapturingWithQuantifier {
+                expression,
+                quantifier,
+            },
+        },
+    )
+}
+
+fn group_non_capturing_modifier<'a>(
+) -> impl Parser<'a, &'a [(usize, char)], ast::GroupNonCapturingModifier> {
+    parcel::join(expect_character('?'), expect_character(':'))
+        .map(|_| ast::GroupNonCapturingModifier)
+}
+
+// Matchers
+
+fn r#match<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Match> {
+    parcel::join(match_item(), parcel::optional(quantifier())).map(|(match_item, quantifier)| {
+        match quantifier {
+            Some(quantifier) => ast::Match::WithQuantifier {
+                item: match_item,
+                quantifier,
+            },
+            None => ast::Match::WithoutQuantifier { item: match_item },
+        }
+    })
+}
+
+fn match_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::MatchItem> {
+    parcel::or(match_any_character().map(Into::into), || {
+        parcel::or(match_character_class().map(Into::into), || {
+            match_character().map(Into::into)
+        })
+    })
+}
+
+fn match_any_character<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::MatchAnyCharacter>
+{
+    expect_character('.').map(|_| ast::MatchAnyCharacter)
+}
+
+fn match_character_class<'a>(
+) -> impl parcel::Parser<'a, &'a [(usize, char)], ast::MatchCharacterClass> {
+    parcel::or(
+        character_group().map(ast::MatchCharacterClass::CharacterGroup),
+        || {
+            parcel::or(
+                character_class().map(ast::MatchCharacterClass::CharacterClass),
+                || {
+                    character_class_from_unicode_category()
+                        .map(ast::MatchCharacterClass::CharacterClassFromUnicodeCategory)
+                },
+            )
+        },
+    )
+}
+
+fn match_character<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::MatchCharacter> {
+    char().map(ast::MatchCharacter)
 }
 
 // Character Classes

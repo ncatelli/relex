@@ -1,6 +1,75 @@
-pub enum Ast {
-    Integer(Integer),
+pub enum Regex {
+    StartOfStringAnchored(Expression),
+    Unanchored(Expression),
 }
+
+// Expression
+
+pub struct Expression(pub Vec<SubExpression>);
+
+pub struct SubExpression(pub Vec<SubExpressionItem>);
+
+impl From<SubExpressionItem> for SubExpression {
+    fn from(src: SubExpressionItem) -> Self {
+        Self(vec![src])
+    }
+}
+
+pub enum SubExpressionItem {
+    Match(Match),
+    Group(Group),
+    Anchor(Anchor),
+    Backreference(Integer),
+}
+
+pub trait IsSubExpressionItem: Into<SubExpressionItem> {}
+
+impl From<Match> for SubExpressionItem {
+    fn from(src: Match) -> Self {
+        Self::Match(src)
+    }
+}
+
+impl From<Group> for SubExpressionItem {
+    fn from(src: Group) -> Self {
+        Self::Group(src)
+    }
+}
+
+impl From<Anchor> for SubExpressionItem {
+    fn from(src: Anchor) -> Self {
+        Self::Anchor(src)
+    }
+}
+
+impl From<Backreference> for SubExpressionItem {
+    fn from(src: Backreference) -> Self {
+        Self::Backreference(src.0)
+    }
+}
+
+// Group
+
+pub enum Group {
+    Capturing {
+        expression: Expression,
+    },
+    CapturingWithQuantifier {
+        expression: Expression,
+        quantifier: Quantifier,
+    },
+    NonCapturing {
+        expression: Expression,
+    },
+    NonCapturingWithQuantifier {
+        expression: Expression,
+        quantifier: Quantifier,
+    },
+}
+
+impl IsSubExpressionItem for Group {}
+
+pub struct GroupNonCapturingModifier;
 
 // Matchers
 
@@ -14,12 +83,21 @@ pub enum Match {
     },
 }
 
+impl IsSubExpressionItem for Match {}
+
 pub enum MatchItem {
+    MatchAnyCharacter,
     MatchCharacterClass(MatchCharacterClass),
     MatchCharacter(MatchCharacter),
 }
 
 pub trait IsMatchItem: Into<MatchItem> {}
+
+impl From<MatchAnyCharacter> for MatchItem {
+    fn from(_: MatchAnyCharacter) -> Self {
+        Self::MatchAnyCharacter
+    }
+}
 
 impl From<MatchCharacterClass> for MatchItem {
     fn from(src: MatchCharacterClass) -> Self {
@@ -32,6 +110,9 @@ impl From<MatchCharacter> for MatchItem {
         Self::MatchCharacter(src)
     }
 }
+
+pub struct MatchAnyCharacter;
+impl IsMatchItem for MatchAnyCharacter {}
 
 pub enum MatchCharacterClass {
     CharacterGroup(CharacterGroup),
@@ -61,7 +142,7 @@ impl From<CharacterClassFromUnicodeCategory> for MatchCharacterClass {
     }
 }
 
-pub struct MatchCharacter(Char);
+pub struct MatchCharacter(pub Char);
 impl IsMatchItem for MatchCharacter {}
 
 // Character Classes
@@ -307,6 +388,7 @@ impl IsQuantifierType for ZeroOrOneQuantifier {}
 // Backreference
 
 pub struct Backreference(pub Integer);
+impl IsSubExpressionItem for Backreference {}
 
 // Anchors
 
@@ -323,6 +405,8 @@ pub enum Anchor {
     PreviousMatchEnd,
     EndOfString,
 }
+
+impl IsSubExpressionItem for Anchor {}
 
 impl From<AnchorWordBoundary> for Anchor {
     fn from(_: AnchorWordBoundary) -> Self {
