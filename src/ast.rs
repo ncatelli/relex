@@ -2,6 +2,125 @@ pub enum Ast {
     Integer(Integer),
 }
 
+// Character Classes
+
+pub enum CharacterGroup {
+    NegatedItems(Vec<CharacterGroupItem>),
+    Items(Vec<CharacterGroupItem>),
+}
+
+pub struct CharacterGroupNegativeModifier;
+
+pub enum CharacterGroupItem {
+    CharacterClass(CharacterClass),
+    CharacterClassFromUnicodeCategory(UnicodeCategoryName),
+    CharacterRangeWithUpperBound(Char, Char),
+    CharacterRange(Char),
+    Char(Char),
+}
+
+pub trait IsCharacterGroupItem: Into<CharacterGroupItem> {}
+
+impl From<CharacterClass> for CharacterGroupItem {
+    fn from(src: CharacterClass) -> Self {
+        Self::CharacterClass(src)
+    }
+}
+
+impl From<CharacterClassFromUnicodeCategory> for CharacterGroupItem {
+    fn from(src: CharacterClassFromUnicodeCategory) -> Self {
+        Self::CharacterClassFromUnicodeCategory(src.0)
+    }
+}
+
+impl From<CharacterRange> for CharacterGroupItem {
+    fn from(src: CharacterRange) -> Self {
+        let CharacterRange {
+            lower_bound,
+            upper_bound,
+        } = src;
+
+        match (lower_bound, upper_bound) {
+            (lower, Some(upper)) => Self::CharacterRangeWithUpperBound(lower, upper),
+            (lower, None) => Self::CharacterRange(lower),
+        }
+    }
+}
+
+impl From<Char> for CharacterGroupItem {
+    fn from(src: Char) -> Self {
+        Self::Char(src)
+    }
+}
+
+pub enum CharacterClass {
+    AnyWord,
+    AnyWordInverted,
+    AnyDecimalDigit,
+    AnyDecimalDigitInverted,
+}
+
+impl IsCharacterGroupItem for CharacterClass {}
+
+pub trait IsCharacterClass: Into<CharacterClass> {}
+
+impl From<CharacterClassAnyWord> for CharacterClass {
+    fn from(_: CharacterClassAnyWord) -> Self {
+        Self::AnyWord
+    }
+}
+
+impl From<CharacterClassAnyWordInverted> for CharacterClass {
+    fn from(_: CharacterClassAnyWordInverted) -> Self {
+        Self::AnyWordInverted
+    }
+}
+
+impl From<CharacterClassAnyDecimalDigit> for CharacterClass {
+    fn from(_: CharacterClassAnyDecimalDigit) -> Self {
+        Self::AnyDecimalDigit
+    }
+}
+
+impl From<CharacterClassAnyDecimalDigitInverted> for CharacterClass {
+    fn from(_: CharacterClassAnyDecimalDigitInverted) -> Self {
+        Self::AnyDecimalDigitInverted
+    }
+}
+
+pub struct CharacterClassAnyWord;
+impl IsCharacterClass for CharacterClassAnyWord {}
+
+pub struct CharacterClassAnyWordInverted;
+impl IsCharacterClass for CharacterClassAnyWordInverted {}
+
+pub struct CharacterClassAnyDecimalDigit;
+impl IsCharacterClass for CharacterClassAnyDecimalDigit {}
+
+pub struct CharacterClassAnyDecimalDigitInverted;
+impl IsCharacterClass for CharacterClassAnyDecimalDigitInverted {}
+
+pub struct CharacterClassFromUnicodeCategory(pub UnicodeCategoryName);
+impl IsCharacterGroupItem for CharacterClassFromUnicodeCategory {}
+
+pub struct UnicodeCategoryName(pub Letters);
+
+pub struct CharacterRange {
+    lower_bound: Char,
+    upper_bound: Option<Char>,
+}
+
+impl CharacterRange {
+    pub fn new(lower_bound: Char, upper_bound: Option<Char>) -> Self {
+        Self {
+            lower_bound,
+            upper_bound,
+        }
+    }
+}
+
+impl IsCharacterGroupItem for CharacterRange {}
+
 // Quantifiers
 
 pub enum Quantifier {
@@ -123,6 +242,92 @@ impl IsQuantifierType for ZeroOrOneQuantifier {}
 
 pub struct Backreference(pub Integer);
 
+// Anchors
+
+pub struct StartOfStringAnchor;
+
+pub trait IsAnchor: Into<Anchor> {}
+
+pub enum Anchor {
+    WordBoundary,
+    NonWordBoundary,
+    StartOfStringOnly,
+    EndOfStringOnlyNonNewline,
+    EndOfStringOnly,
+    PreviousMatchEnd,
+    EndOfString,
+}
+
+impl From<AnchorWordBoundary> for Anchor {
+    fn from(_: AnchorWordBoundary) -> Self {
+        Self::WordBoundary
+    }
+}
+
+impl From<AnchorNonWordBoundary> for Anchor {
+    fn from(_: AnchorNonWordBoundary) -> Self {
+        Self::NonWordBoundary
+    }
+}
+
+impl From<AnchorStartOfStringOnly> for Anchor {
+    fn from(_: AnchorStartOfStringOnly) -> Self {
+        Self::StartOfStringOnly
+    }
+}
+
+impl From<AnchorEndOfStringOnlyNotNewline> for Anchor {
+    fn from(_: AnchorEndOfStringOnlyNotNewline) -> Self {
+        Self::EndOfStringOnlyNonNewline
+    }
+}
+
+impl From<AnchorEndOfStringOnly> for Anchor {
+    fn from(_: AnchorEndOfStringOnly) -> Self {
+        Self::EndOfStringOnly
+    }
+}
+
+impl From<AnchorPreviousMatchEnd> for Anchor {
+    fn from(_: AnchorPreviousMatchEnd) -> Self {
+        Self::PreviousMatchEnd
+    }
+}
+
+impl From<AnchorEndOfString> for Anchor {
+    fn from(_: AnchorEndOfString) -> Self {
+        Self::EndOfString
+    }
+}
+
+/// An anchor representing by "\b".
+pub struct AnchorWordBoundary;
+impl IsAnchor for AnchorWordBoundary {}
+
+/// An anchor representing by "\B".
+pub struct AnchorNonWordBoundary;
+impl IsAnchor for AnchorNonWordBoundary {}
+
+/// An anchor representing by "\A".
+pub struct AnchorStartOfStringOnly;
+impl IsAnchor for AnchorStartOfStringOnly {}
+
+/// An anchor representing by "\z".
+pub struct AnchorEndOfStringOnlyNotNewline;
+impl IsAnchor for AnchorEndOfStringOnlyNotNewline {}
+
+/// An anchor representing by "\Z".
+pub struct AnchorEndOfStringOnly;
+impl IsAnchor for AnchorEndOfStringOnly {}
+
+/// An anchor representing by "\G".
+pub struct AnchorPreviousMatchEnd;
+impl IsAnchor for AnchorPreviousMatchEnd {}
+
+/// An anchor representing by "$".
+pub struct AnchorEndOfString;
+impl IsAnchor for AnchorEndOfString {}
+
 // Terminals
 
 #[repr(transparent)]
@@ -137,5 +342,42 @@ impl Integer {
 impl From<Integer> for isize {
     fn from(src: Integer) -> Self {
         src.as_isize()
+    }
+}
+
+#[repr(transparent)]
+pub struct Letters(pub Vec<char>);
+
+impl Letters {
+    pub fn as_char_slice(&self) -> &[char] {
+        &self.0
+    }
+}
+
+impl AsRef<[char]> for Letters {
+    fn as_ref(&self) -> &[char] {
+        self.as_char_slice()
+    }
+}
+
+#[repr(transparent)]
+pub struct Char(pub char);
+impl IsCharacterGroupItem for Char {}
+
+impl Char {
+    pub fn as_char(&self) -> char {
+        self.0
+    }
+}
+
+impl AsRef<char> for Char {
+    fn as_ref(&self) -> &char {
+        &self.0
+    }
+}
+
+impl From<Char> for char {
+    fn from(src: Char) -> char {
+        src.as_char()
     }
 }

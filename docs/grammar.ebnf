@@ -64,6 +64,7 @@ UnicodeCategoryName ::= Letters
 
 CharacterRange ::= Char ("-" Char)?
 
+
 /* Quantifiers 
 ------------------------------------------------------------------*/
 

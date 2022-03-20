@@ -1,4 +1,4 @@
-use parcel::parsers::character::{digit, expect_character};
+use parcel::parsers::character::{alphabetic, any_character, digit, expect_character};
 use parcel::prelude::v1::*;
 
 use crate::ast;
@@ -17,6 +17,93 @@ impl std::fmt::Debug for ParseErr {
 
 pub fn parse(input: &[(usize, char)]) -> Result<(), ParseErr> {
     todo!()
+}
+
+// Character Classes
+
+fn character_group<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CharacterGroup> {
+    parcel::join(
+        parcel::right(parcel::join(
+            expect_character('['),
+            parcel::optional(expect_character('^')).map(|negation| negation.is_some()),
+        )),
+        parcel::left(parcel::join(
+            parcel::one_or_more(character_group_item()),
+            expect_character(']'),
+        )),
+    )
+    .map(|(negation, character_group_items)| match negation {
+        true => ast::CharacterGroup::NegatedItems(character_group_items),
+        false => ast::CharacterGroup::Items(character_group_items),
+    })
+}
+
+fn character_group_item<'a>(
+) -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CharacterGroupItem> {
+    parcel::or(character_class().map(Into::into), || {
+        parcel::or(
+            character_class_from_unicode_category().map(Into::into),
+            || parcel::or(character_range().map(Into::into), || char().map(Into::into)),
+        )
+    })
+}
+
+fn character_class<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CharacterClass> {
+    parcel::or(character_class_any_word().map(Into::into), || {
+        parcel::or(character_class_any_word_inverted().map(Into::into), || {
+            parcel::or(character_class_any_decimal_digit().map(Into::into), || {
+                character_class_any_decimal_digit_inverted().map(Into::into)
+            })
+        })
+    })
+}
+
+fn character_class_any_word<'a>(
+) -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CharacterClassAnyWord> {
+    parcel::join(expect_character('\\'), expect_character('w')).map(|_| ast::CharacterClassAnyWord)
+}
+
+fn character_class_any_word_inverted<'a>(
+) -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CharacterClassAnyWordInverted> {
+    parcel::join(expect_character('\\'), expect_character('W'))
+        .map(|_| ast::CharacterClassAnyWordInverted)
+}
+
+fn character_class_any_decimal_digit<'a>(
+) -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CharacterClassAnyDecimalDigit> {
+    parcel::join(expect_character('\\'), expect_character('d'))
+        .map(|_| ast::CharacterClassAnyDecimalDigit)
+}
+
+fn character_class_any_decimal_digit_inverted<'a>(
+) -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CharacterClassAnyDecimalDigitInverted> {
+    parcel::join(expect_character('\\'), expect_character('D'))
+        .map(|_| ast::CharacterClassAnyDecimalDigitInverted)
+}
+
+fn character_class_from_unicode_category<'a>(
+) -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CharacterClassFromUnicodeCategory> {
+    parcel::right(parcel::join(
+        parcel::join(expect_character('\\'), expect_character('p')),
+        parcel::right(parcel::join(
+            expect_character('{'),
+            parcel::left(parcel::join(unicode_category_name(), expect_character('}'))),
+        )),
+    ))
+    .map(ast::CharacterClassFromUnicodeCategory)
+}
+
+fn unicode_category_name<'a>(
+) -> impl parcel::Parser<'a, &'a [(usize, char)], ast::UnicodeCategoryName> {
+    letters().map(ast::UnicodeCategoryName)
+}
+
+fn character_range<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CharacterRange> {
+    parcel::join(
+        char(),
+        parcel::optional(parcel::right(parcel::join(expect_character('-'), char()))),
+    )
+    .map(|(lower_bound, upper_bound)| ast::CharacterRange::new(lower_bound, upper_bound))
 }
 
 // Quantifiers
@@ -90,6 +177,66 @@ fn backreference<'a>() -> impl Parser<'a, &'a [(usize, char)], ast::Backreferenc
     parcel::right(parcel::join(expect_character('\\'), integer())).map(ast::Backreference)
 }
 
+// Anchors
+
+fn start_of_string_anchor<'a>() -> impl Parser<'a, &'a [(usize, char)], ast::StartOfStringAnchor> {
+    expect_character('^').map(|_| ast::StartOfStringAnchor)
+}
+
+fn anchor<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Anchor> {
+    parcel::or(anchor_word_boundary().map(Into::into), || {
+        parcel::or(anchor_nonword_boundary().map(Into::into), || {
+            parcel::or(anchor_start_of_string_only().map(Into::into), || {
+                parcel::or(
+                    anchor_end_of_string_only_not_newline().map(Into::into),
+                    || {
+                        parcel::or(anchor_end_of_string_only().map(Into::into), || {
+                            parcel::or(anchor_previous_match_end().map(Into::into), || {
+                                anchor_end_of_string().map(Into::into)
+                            })
+                        })
+                    },
+                )
+            })
+        })
+    })
+}
+
+fn anchor_word_boundary<'a>() -> impl Parser<'a, &'a [(usize, char)], ast::AnchorWordBoundary> {
+    parcel::join(expect_character('\\'), expect_character('b')).map(|_| ast::AnchorWordBoundary)
+}
+
+fn anchor_nonword_boundary<'a>() -> impl Parser<'a, &'a [(usize, char)], ast::AnchorNonWordBoundary>
+{
+    parcel::join(expect_character('\\'), expect_character('B')).map(|_| ast::AnchorNonWordBoundary)
+}
+
+fn anchor_start_of_string_only<'a>(
+) -> impl Parser<'a, &'a [(usize, char)], ast::AnchorStartOfStringOnly> {
+    parcel::join(expect_character('\\'), expect_character('A'))
+        .map(|_| ast::AnchorStartOfStringOnly)
+}
+
+fn anchor_end_of_string_only_not_newline<'a>(
+) -> impl Parser<'a, &'a [(usize, char)], ast::AnchorEndOfStringOnlyNotNewline> {
+    parcel::join(expect_character('\\'), expect_character('z'))
+        .map(|_| ast::AnchorEndOfStringOnlyNotNewline)
+}
+
+fn anchor_end_of_string_only<'a>(
+) -> impl Parser<'a, &'a [(usize, char)], ast::AnchorEndOfStringOnly> {
+    parcel::join(expect_character('\\'), expect_character('Z')).map(|_| ast::AnchorEndOfStringOnly)
+}
+
+fn anchor_previous_match_end<'a>(
+) -> impl Parser<'a, &'a [(usize, char)], ast::AnchorPreviousMatchEnd> {
+    parcel::join(expect_character('\\'), expect_character('G')).map(|_| ast::AnchorPreviousMatchEnd)
+}
+
+fn anchor_end_of_string<'a>() -> impl Parser<'a, &'a [(usize, char)], ast::AnchorEndOfString> {
+    expect_character('$').map(|_| ast::AnchorEndOfString)
+}
+
 // Terminals
 
 fn integer<'a>() -> impl Parser<'a, &'a [(usize, char)], ast::Integer> {
@@ -133,4 +280,12 @@ fn integer<'a>() -> impl Parser<'a, &'a [(usize, char)], ast::Integer> {
             Err(e) => Err(e),
         }
     }
+}
+
+fn letters<'a>() -> impl Parser<'a, &'a [(usize, char)], ast::Letters> {
+    parcel::one_or_more(alphabetic().predicate(|c| c.is_ascii_alphabetic())).map(ast::Letters)
+}
+
+fn char<'a>() -> impl Parser<'a, &'a [(usize, char)], ast::Char> {
+    any_character().map(ast::Char)
 }
