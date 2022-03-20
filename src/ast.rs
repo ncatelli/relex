@@ -90,6 +90,7 @@ pub enum Match {
 
 impl IsSubExpressionItem for Match {}
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum MatchItem {
     MatchAnyCharacter,
@@ -120,6 +121,7 @@ impl From<MatchCharacter> for MatchItem {
 pub struct MatchAnyCharacter;
 impl IsMatchItem for MatchAnyCharacter {}
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum MatchCharacterClass {
     CharacterGroup(CharacterGroup),
@@ -165,6 +167,7 @@ impl IsMatchCharacterClass for CharacterGroup {}
 
 pub struct CharacterGroupNegativeModifier;
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum CharacterGroupItem {
     CharacterClass(CharacterClass),
@@ -208,6 +211,7 @@ impl From<Char> for CharacterGroupItem {
     }
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub enum CharacterClass {
     AnyWord,

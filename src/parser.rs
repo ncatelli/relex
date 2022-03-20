@@ -161,7 +161,8 @@ fn character_group<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Ch
     parcel::join(
         parcel::right(parcel::join(
             expect_character('['),
-            parcel::optional(expect_character('^')).map(|negation| negation.is_some()),
+            parcel::optional(character_group_negative_modifier())
+                .map(|negation| negation.is_some()),
         )),
         parcel::left(parcel::join(
             parcel::one_or_more(character_group_item()),
@@ -172,6 +173,11 @@ fn character_group<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Ch
         true => ast::CharacterGroup::NegatedItems(character_group_items),
         false => ast::CharacterGroup::Items(character_group_items),
     })
+}
+
+fn character_group_negative_modifier<'a>(
+) -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CharacterGroupNegativeModifier> {
+    parcel::optional(expect_character('^')).map(|_| ast::CharacterGroupNegativeModifier)
 }
 
 fn character_group_item<'a>(
