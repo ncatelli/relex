@@ -2,12 +2,76 @@ pub enum Ast {
     Integer(Integer),
 }
 
+// Matchers
+
+pub enum Match {
+    WithQuantifier {
+        item: MatchItem,
+        quantifier: Quantifier,
+    },
+    WithoutQuantifier {
+        item: MatchItem,
+    },
+}
+
+pub enum MatchItem {
+    MatchCharacterClass(MatchCharacterClass),
+    MatchCharacter(MatchCharacter),
+}
+
+pub trait IsMatchItem: Into<MatchItem> {}
+
+impl From<MatchCharacterClass> for MatchItem {
+    fn from(src: MatchCharacterClass) -> Self {
+        Self::MatchCharacterClass(src)
+    }
+}
+
+impl From<MatchCharacter> for MatchItem {
+    fn from(src: MatchCharacter) -> Self {
+        Self::MatchCharacter(src)
+    }
+}
+
+pub enum MatchCharacterClass {
+    CharacterGroup(CharacterGroup),
+    CharacterClass(CharacterClass),
+    CharacterClassFromUnicodeCategory(CharacterClassFromUnicodeCategory),
+}
+
+impl IsMatchItem for MatchCharacterClass {}
+
+pub trait IsMatchCharacterClass: Into<MatchCharacterClass> {}
+
+impl From<CharacterGroup> for MatchCharacterClass {
+    fn from(src: CharacterGroup) -> Self {
+        Self::CharacterGroup(src)
+    }
+}
+
+impl From<CharacterClass> for MatchCharacterClass {
+    fn from(src: CharacterClass) -> Self {
+        Self::CharacterClass(src)
+    }
+}
+
+impl From<CharacterClassFromUnicodeCategory> for MatchCharacterClass {
+    fn from(src: CharacterClassFromUnicodeCategory) -> Self {
+        Self::CharacterClassFromUnicodeCategory(src)
+    }
+}
+
+pub struct MatchCharacter(Char);
+impl IsMatchItem for MatchCharacter {}
+
 // Character Classes
 
 pub enum CharacterGroup {
     NegatedItems(Vec<CharacterGroupItem>),
     Items(Vec<CharacterGroupItem>),
 }
+
+impl IsMatchCharacterClass for CharacterGroup {}
 
 pub struct CharacterGroupNegativeModifier;
 
@@ -60,6 +124,7 @@ pub enum CharacterClass {
     AnyDecimalDigitInverted,
 }
 
+impl IsMatchCharacterClass for CharacterClass {}
 impl IsCharacterGroupItem for CharacterClass {}
 
 pub trait IsCharacterClass: Into<CharacterClass> {}
@@ -101,6 +166,7 @@ pub struct CharacterClassAnyDecimalDigitInverted;
 impl IsCharacterClass for CharacterClassAnyDecimalDigitInverted {}
 
 pub struct CharacterClassFromUnicodeCategory(pub UnicodeCategoryName);
+impl IsMatchCharacterClass for CharacterClassFromUnicodeCategory {}
 impl IsCharacterGroupItem for CharacterClassFromUnicodeCategory {}
 
 pub struct UnicodeCategoryName(pub Letters);
