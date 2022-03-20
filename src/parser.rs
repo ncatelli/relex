@@ -17,6 +17,7 @@ impl std::fmt::Debug for ParseErr {
     }
 }
 
+#[allow(unused)]
 pub fn parse(input: &[(usize, char)]) -> Result<ast::Regex, ParseErr> {
     regex()
         .parse(input)
@@ -68,22 +69,23 @@ fn subexpression_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast:
 // Group
 
 fn group<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Group> {
-    parcel::join(
-        parcel::right(parcel::join(
-            expect_character('('),
-            parcel::optional(group_non_capturing_modifier())
-                .map(|non_capturing| non_capturing.is_some()),
-        )),
+    parcel::right(parcel::join(
+        expect_character('('),
+        parcel::optional(group_non_capturing_modifier())
+            .map(|non_capturing| non_capturing.is_some()),
+    ))
+    .and_then(|non_capturing| {
         parcel::join(
             expression(),
             parcel::right(parcel::join(
                 expect_character(')'),
                 parcel::optional(quantifier()),
             )),
-        ),
-    )
-    .map(
-        |(is_non_capturing, (expression, quantifier))| match (is_non_capturing, quantifier) {
+        )
+        .map(move |expr_and_qualifier| (non_capturing, expr_and_qualifier))
+    })
+    .map(|(is_non_capturing, (expression, quantifier))| {
+        match (is_non_capturing, quantifier) {
             (true, None) => ast::Group::NonCapturing { expression },
             (true, Some(quantifier)) => ast::Group::NonCapturingWithQuantifier {
                 expression,
@@ -94,8 +96,8 @@ fn group<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Group> {
                 expression,
                 quantifier,
             },
-        },
-    )
+        }
+    })
 }
 
 fn group_non_capturing_modifier<'a>(
@@ -420,4 +422,26 @@ fn letters<'a>() -> impl Parser<'a, &'a [(usize, char)], ast::Letters> {
 
 fn char<'a>() -> impl Parser<'a, &'a [(usize, char)], ast::Char> {
     any_character().map(ast::Char)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_parse_minimal_expression() {
+        let inputs = vec![
+            // a basic input string
+            "the red pill",
+            // A recursive grouping
+            "the ((red|blue) pill)",
+        ]
+        .into_iter()
+        .map(|input| input.chars().enumerate().collect::<Vec<(usize, char)>>());
+
+        for input in inputs {
+            let parse_result = parse(&input);
+            assert!(parse_result.is_ok())
+        }
+    }
 }

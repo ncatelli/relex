@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub enum Regex {
     StartOfStringAnchored(Expression),
     Unanchored(Expression),
@@ -5,8 +6,10 @@ pub enum Regex {
 
 // Expression
 
+#[derive(Debug)]
 pub struct Expression(pub Vec<SubExpression>);
 
+#[derive(Debug)]
 pub struct SubExpression(pub Vec<SubExpressionItem>);
 
 impl From<SubExpressionItem> for SubExpression {
@@ -15,6 +18,7 @@ impl From<SubExpressionItem> for SubExpression {
     }
 }
 
+#[derive(Debug)]
 pub enum SubExpressionItem {
     Match(Match),
     Group(Group),
@@ -49,7 +53,7 @@ impl From<Backreference> for SubExpressionItem {
 }
 
 // Group
-
+#[derive(Debug)]
 pub enum Group {
     Capturing {
         expression: Expression,
@@ -73,6 +77,7 @@ pub struct GroupNonCapturingModifier;
 
 // Matchers
 
+#[derive(Debug)]
 pub enum Match {
     WithQuantifier {
         item: MatchItem,
@@ -85,6 +90,7 @@ pub enum Match {
 
 impl IsSubExpressionItem for Match {}
 
+#[derive(Debug)]
 pub enum MatchItem {
     MatchAnyCharacter,
     MatchCharacterClass(MatchCharacterClass),
@@ -114,6 +120,7 @@ impl From<MatchCharacter> for MatchItem {
 pub struct MatchAnyCharacter;
 impl IsMatchItem for MatchAnyCharacter {}
 
+#[derive(Debug)]
 pub enum MatchCharacterClass {
     CharacterGroup(CharacterGroup),
     CharacterClass(CharacterClass),
@@ -142,11 +149,13 @@ impl From<CharacterClassFromUnicodeCategory> for MatchCharacterClass {
     }
 }
 
+#[derive(Debug)]
 pub struct MatchCharacter(pub Char);
 impl IsMatchItem for MatchCharacter {}
 
 // Character Classes
 
+#[derive(Debug)]
 pub enum CharacterGroup {
     NegatedItems(Vec<CharacterGroupItem>),
     Items(Vec<CharacterGroupItem>),
@@ -156,6 +165,7 @@ impl IsMatchCharacterClass for CharacterGroup {}
 
 pub struct CharacterGroupNegativeModifier;
 
+#[derive(Debug)]
 pub enum CharacterGroupItem {
     CharacterClass(CharacterClass),
     CharacterClassFromUnicodeCategory(UnicodeCategoryName),
@@ -198,6 +208,7 @@ impl From<Char> for CharacterGroupItem {
     }
 }
 
+#[derive(Debug)]
 pub enum CharacterClass {
     AnyWord,
     AnyWordInverted,
@@ -246,10 +257,12 @@ impl IsCharacterClass for CharacterClassAnyDecimalDigit {}
 pub struct CharacterClassAnyDecimalDigitInverted;
 impl IsCharacterClass for CharacterClassAnyDecimalDigitInverted {}
 
+#[derive(Debug)]
 pub struct CharacterClassFromUnicodeCategory(pub UnicodeCategoryName);
 impl IsMatchCharacterClass for CharacterClassFromUnicodeCategory {}
 impl IsCharacterGroupItem for CharacterClassFromUnicodeCategory {}
 
+#[derive(Debug)]
 pub struct UnicodeCategoryName(pub Letters);
 
 pub struct CharacterRange {
@@ -270,6 +283,7 @@ impl IsCharacterGroupItem for CharacterRange {}
 
 // Quantifiers
 
+#[derive(Debug)]
 pub enum Quantifier {
     Eager(QuantifierType),
     Lazy(QuantifierType),
@@ -280,6 +294,7 @@ pub enum Quantifier {
 pub trait IsQuantifierType: Into<QuantifierType> {}
 
 /// Represents all variants of quantifier types
+#[derive(Debug)]
 pub enum QuantifierType {
     MatchExactRange(Integer),
     MatchAtleastRange(Integer),
@@ -396,6 +411,7 @@ pub struct StartOfStringAnchor;
 
 pub trait IsAnchor: Into<Anchor> {}
 
+#[derive(Debug)]
 pub enum Anchor {
     WordBoundary,
     NonWordBoundary,
@@ -480,6 +496,7 @@ impl IsAnchor for AnchorEndOfString {}
 
 // Terminals
 
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct Integer(pub isize);
 
@@ -495,6 +512,7 @@ impl From<Integer> for isize {
     }
 }
 
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct Letters(pub Vec<char>);
 
@@ -510,6 +528,7 @@ impl AsRef<[char]> for Letters {
     }
 }
 
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct Char(pub char);
 impl IsCharacterGroupItem for Char {}
