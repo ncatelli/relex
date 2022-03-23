@@ -1,2 +1,1 @@
-mod ast;
-mod parser;
+mod regex;

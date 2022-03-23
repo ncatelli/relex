@@ -1,7 +1,7 @@
 use parcel::parsers::character::{alphabetic, digit, expect_character};
 use parcel::prelude::v1::*;
 
-use crate::ast;
+use super::ast;
 
 pub enum ParseErr {
     InvalidRegex,
