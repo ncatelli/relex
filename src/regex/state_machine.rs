@@ -3,14 +3,6 @@ use std::ops::Index;
 
 use super::sparse_set::SparseSet;
 
-pub trait Execute<T> {
-    fn execute(self, thread: T) -> T;
-}
-
-pub trait ExecuteMut<T, R> {
-    fn execute_mut(&mut self, operation: &T) -> R;
-}
-
 #[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct InputPtr(usize);
