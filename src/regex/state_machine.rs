@@ -40,6 +40,7 @@ enum Follow {
     InstPtr(InstPtr),
 }
 
+#[derive(Debug)]
 pub struct Threads {
     ops: SparseSet,
 }
@@ -303,7 +304,8 @@ where
             Match => true,
             Consume(ref inst) => {
                 if self.input[at.as_usize()] == inst.value {
-                    self.add(stack, thread_list, ip, at.next_pos());
+                    let next = inst.next;
+                    self.add(stack, thread_list, next, at.next_pos());
                 }
 
                 false
@@ -320,7 +322,9 @@ where
         at: InputPtr,
     ) -> InstPtr {
         stack.push(Follow::InstPtr(start));
+
         let mut ip = start;
+
         while let Some(frame) = stack.pop() {
             ip = match frame {
                 Follow::InstPtr(ip) => self.add_step(stack, thread_list, ip, at),
@@ -345,7 +349,7 @@ where
             if thread_list.ops.contains(ip.as_usize()) {
                 return ip;
             } else {
-                thread_list.ops.push(ip.as_usize());
+                thread_list.ops.insert(ip.as_usize());
             }
 
             match self.program[ip] {
@@ -365,23 +369,41 @@ where
 mod tests {
     use super::*;
 
+    fn construct_sequential_consume_pattern_from_str(input: &str) -> Instructions<char> {
+        let consumes = input
+            .chars()
+            .enumerate()
+            .map(|(pos, c)| Instruction::Consume(InstConsume::new(c, InstPtr::from(pos + 1))));
+        let insts = consumes
+            .chain(vec![Instruction::Match].into_iter())
+            .collect();
+
+        Instructions::new(insts)
+    }
+
     #[test]
-    fn should_evaluate_test_expression() {
-        let prog = Instructions::new(vec![
-            Instruction::Consume(InstConsume::new('a', InstPtr::from(1))),
-            Instruction::Match,
-        ]);
-        let mut cache = ThreadCache::new();
+    fn should_evaluate_single_character_match_expression() {
+        let progs = vec![
+            (true, construct_sequential_consume_pattern_from_str("a")),
+            (true, construct_sequential_consume_pattern_from_str("aab")),
+            (false, construct_sequential_consume_pattern_from_str("b")),
+        ];
+
         let input = ['a', 'a', 'b'];
 
-        StateMachine::<char, [char]>::exec(
-            &mut cache,
-            &prog,
-            input.as_ref(),
-            true,
-            InputPtr(0),
-            InputPtr(2),
-        );
+        for (expected_res, prog) in progs {
+            let mut cache = ThreadCache::new();
+            let res = StateMachine::<char, [char]>::exec(
+                &mut cache,
+                &prog,
+                input.as_ref(),
+                true,
+                InputPtr(0),
+                InputPtr(2),
+            );
+
+            assert_eq!(expected_res, res);
+        }
     }
 
     #[test]
