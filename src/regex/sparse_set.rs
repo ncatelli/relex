@@ -20,14 +20,14 @@ impl SparseSet {
         self.dense.len()
     }
 
-    pub fn insert(&mut self, val: usize) {
+    pub fn insert_unchecked(&mut self, val: usize) {
         let sparse_ptr = self.dense.len();
         self.dense.push(val);
         self.sparse[val] = sparse_ptr;
     }
 
-    pub fn push(&mut self, val: usize) {
-        self.insert(val)
+    pub fn push_unchecked(&mut self, val: usize) {
+        self.insert_unchecked(val)
     }
 
     pub fn pop(&mut self) -> Option<usize> {

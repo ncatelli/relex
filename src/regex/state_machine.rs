@@ -1,54 +1,76 @@
-use std::fmt::{Debug, Display};
-use std::ops::Index;
-
 use super::sparse_set::SparseSet;
+use std::fmt::{Debug, Display};
 
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-pub struct InputPtr(usize);
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Saved {
+    None,
+    Open {
+        slot_id: usize,
+        start: usize,
+    },
+    Complete {
+        slot_id: usize,
+        start: usize,
+        end: usize,
+    },
+}
 
-impl InputPtr {
-    #[inline]
-    fn as_usize(&self) -> usize {
-        self.0
+impl Saved {
+    pub fn complete(slot_id: usize, start: usize, end: usize) -> Self {
+        Self::Complete {
+            slot_id,
+            start,
+            end,
+        }
     }
 
-    #[inline]
-    fn next_pos(&self) -> Self {
-        *self + 1
+    pub fn open(slot_id: usize, start: usize) -> Self {
+        Self::Open { slot_id, start }
     }
 }
 
-impl std::ops::Add<usize> for InputPtr {
-    type Output = InputPtr;
-
-    fn add(self, rhs: usize) -> Self::Output {
-        let new_ptr = self.as_usize() + rhs;
-        InputPtr(new_ptr)
-    }
+#[derive(Debug)]
+pub struct Thread {
+    save_group: usize,
+    inst: InstIndex,
 }
 
-enum Follow {
-    InstPtr(InstPtr),
+impl Thread {
+    #[must_use]
+    pub fn new(save_group: usize, inst: InstIndex) -> Self {
+        Self { save_group, inst }
+    }
 }
 
 #[derive(Debug)]
 pub struct Threads {
     ops: SparseSet,
+    threads: Vec<Thread>,
 }
 
 impl Threads {
     #[must_use]
     pub fn new() -> Self {
         let ops = SparseSet::new(0);
-        Self { ops }
+        Self {
+            threads: vec![],
+            ops,
+        }
+    }
+
+    pub fn with_set_size(set_capacity: usize) -> Self {
+        let ops = SparseSet::new(set_capacity);
+        Self {
+            threads: vec![],
+            ops,
+        }
     }
 
     pub fn resize(&mut self, new_size: usize) {
         use core::mem::swap;
         let mut ops = SparseSet::new(new_size);
         for item in ops.iter().copied() {
-            self.ops.insert(item)
+            self.ops.insert_unchecked(item)
         }
 
         swap(&mut self.ops, &mut ops);
@@ -58,29 +80,32 @@ impl Threads {
 pub struct ThreadCache {
     nlist: Threads,
     clist: Threads,
-
-    stack: Vec<Follow>,
 }
 
 impl ThreadCache {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(size: usize) -> Self {
         Self {
-            nlist: Threads::new(),
-            clist: Threads::new(),
-            stack: vec![],
+            nlist: Threads::with_set_size(size),
+            clist: Threads::with_set_size(size),
         }
     }
 }
 
-pub struct Instructions<T: Debug> {
-    program: Vec<Instruction<T>>,
+pub struct Instructions {
+    program: Vec<Instruction>,
 }
 
-impl<T: Debug> Instructions<T> {
+impl Instructions {
     #[must_use]
-    pub fn new(program: Vec<Instruction<T>>) -> Self {
-        Self { program }
+    pub fn new(program: Vec<Opcode>) -> Self {
+        Self {
+            program: program
+                .into_iter()
+                .enumerate()
+                .map(|(id, opcode)| Instruction::new(id, opcode))
+                .collect(),
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -88,56 +113,100 @@ impl<T: Debug> Instructions<T> {
     }
 }
 
-impl<T: Debug> Display for Instructions<T> {
+impl Display for Instructions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (pos, inst) in self.program.iter().enumerate() {
-            writeln!(f, "{:04}: {}", pos, inst)?
+        for inst in self.program.iter() {
+            writeln!(f, "{:04}: {}", inst.id, inst.opcode)?
         }
 
         Ok(())
     }
 }
 
-impl<T: Debug> std::ops::Index<InstPtr> for Instructions<T> {
-    type Output = Instruction<T>;
+impl std::ops::Index<InstIndex> for Instructions {
+    type Output = Opcode;
 
-    fn index(&self, index: InstPtr) -> &Self::Output {
+    fn index(&self, index: InstIndex) -> &Self::Output {
         let idx = index.as_usize();
-        &self.program[idx]
+        &self.program[idx].opcode
     }
 }
 
-impl<T: Debug> std::ops::IndexMut<InstPtr> for Instructions<T> {
-    fn index_mut(&mut self, index: InstPtr) -> &mut Self::Output {
+impl std::ops::IndexMut<InstIndex> for Instructions {
+    fn index_mut(&mut self, index: InstIndex) -> &mut Self::Output {
         let idx = index.as_usize();
-        &mut self.program[idx]
+        &mut self.program[idx].opcode
     }
 }
 
 #[repr(transparent)]
-#[derive(Clone, Copy)]
-struct InstPtr(usize);
+#[derive(Debug, Clone, Copy)]
+pub struct InstIndex(usize);
 
-impl InstPtr {
+impl InstIndex {
     #[inline]
     fn as_usize(self) -> usize {
         self.0
     }
 }
 
-impl From<usize> for InstPtr {
+impl From<usize> for InstIndex {
     fn from(ptr: usize) -> Self {
         Self(ptr)
     }
 }
 
-pub enum Instruction<T: Debug> {
-    Match,
-    Consume(InstConsume<T>),
-    Split(InstSplit),
+impl std::ops::Add<usize> for InstIndex {
+    type Output = Self;
+
+    fn add(self, rhs: usize) -> Self::Output {
+        let new_ptr = self.as_usize() + rhs;
+
+        InstIndex::from(new_ptr)
+    }
 }
 
-impl<T: Debug> Instruction<T> {
+impl std::ops::Add<Self> for InstIndex {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let (lhs, rhs) = (self.as_usize(), rhs.as_usize());
+        let new_ptr = lhs + rhs;
+
+        InstIndex::from(new_ptr)
+    }
+}
+
+#[derive(Debug)]
+pub struct Instruction {
+    id: usize,
+    opcode: Opcode,
+}
+
+impl Instruction {
+    #[must_use]
+    pub fn new(id: usize, opcode: Opcode) -> Self {
+        Self { id, opcode }
+    }
+}
+
+impl Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:04}: {}", self.id, self.opcode)
+    }
+}
+
+#[derive(Debug)]
+pub enum Opcode {
+    Any(InstAny),
+    Consume(InstConsume),
+    Split(InstSplit),
+    Jmp(InstJmp),
+    StartSave(InstStartSave),
+    EndSave(InstEndSave),
+    Match,
+}
+impl Opcode {
     fn is_match(&self) -> Option<()> {
         match self {
             Self::Match => Some(()),
@@ -146,16 +215,21 @@ impl<T: Debug> Instruction<T> {
     }
 }
 
-impl<T: Debug> Display for Instruction<T> {
+impl Display for Opcode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Instruction::Match => InstMatch.fmt(f),
-            Instruction::Consume(i) => i.fmt(f),
-            Instruction::Split(i) => i.fmt(f),
+            Opcode::Match => std::fmt::Display::fmt(&InstMatch, f),
+            Opcode::Consume(i) => std::fmt::Display::fmt(&i, f),
+            Opcode::Split(i) => std::fmt::Display::fmt(&i, f),
+            Opcode::Any(i) => std::fmt::Display::fmt(&i, f),
+            Opcode::Jmp(i) => std::fmt::Display::fmt(&i, f),
+            Opcode::StartSave(i) => std::fmt::Display::fmt(&i, f),
+            Opcode::EndSave(i) => std::fmt::Display::fmt(&i, f),
         }
     }
 }
 
+#[derive(Debug)]
 struct InstMatch;
 
 impl Display for InstMatch {
@@ -164,19 +238,31 @@ impl Display for InstMatch {
     }
 }
 
-struct InstConsume<T> {
-    value: T,
-    next: InstPtr,
+#[derive(Debug)]
+struct InstAny {
+    next: InstIndex,
 }
 
-impl<T> InstConsume<T> {
+impl Display for InstAny {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Any: ({:04})", self.next.as_usize())
+    }
+}
+
+#[derive(Debug)]
+struct InstConsume {
+    value: char,
+    next: InstIndex,
+}
+
+impl InstConsume {
     #[must_use]
-    fn new(value: T, next: InstPtr) -> Self {
+    fn new(value: char, next: InstIndex) -> Self {
         Self { value, next }
     }
 }
 
-impl<T: Debug> Display for InstConsume<T> {
+impl Display for InstConsume {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -187,14 +273,15 @@ impl<T: Debug> Display for InstConsume<T> {
     }
 }
 
+#[derive(Debug)]
 struct InstSplit {
-    next1: InstPtr,
-    next2: InstPtr,
+    next1: InstIndex,
+    next2: InstIndex,
 }
 
 impl InstSplit {
     #[must_use]
-    fn new(next1: InstPtr, next2: InstPtr) -> Self {
+    fn new(next1: InstIndex, next2: InstIndex) -> Self {
         Self { next1, next2 }
     }
 }
@@ -210,200 +297,258 @@ impl Display for InstSplit {
     }
 }
 
-pub struct StateMachine<'a, T, Input>
-where
-    T: Debug,
-    Input: ?Sized,
-{
-    program: &'a Instructions<T>,
-    input: &'a Input,
+#[derive(Debug)]
+struct InstJmp {
+    next: InstIndex,
 }
 
-impl<'a, T, Input> StateMachine<'a, T, Input>
-where
-    T: Debug + Copy + Eq,
-    Input: Index<usize, Output = T> + ?Sized,
-{
+impl InstJmp {
     #[must_use]
-    pub fn new(program: &'a Instructions<T>, input: &'a Input) -> Self {
-        Self { program, input }
+    fn new(next: InstIndex) -> Self {
+        Self { next }
     }
+}
 
-    pub fn exec(
-        cache: &mut ThreadCache,
-        program: &'a Instructions<T>,
-        input: &'a Input,
-        quit_after_match: bool,
-        at: InputPtr,
-        end: InputPtr,
-    ) -> bool {
-        let mut machine = Self::new(program, input);
-        cache.clist.resize(program.len());
-        cache.nlist.resize(program.len());
-
-        machine.exec_(cache, quit_after_match, at, end)
+impl Display for InstJmp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Jump: ({:04})", self.next.as_usize())
     }
+}
 
-    fn exec_(
-        &mut self,
-        cache: &mut ThreadCache,
-        quit_after_match: bool,
-        mut at: InputPtr,
-        end: InputPtr,
-    ) -> bool {
-        let mut matched = false;
-        let mut all_matched = false;
+#[derive(Debug)]
+struct InstStartSave {
+    slot_id: usize,
+    next: InstIndex,
+}
 
-        cache.clist.ops.clear();
-        cache.nlist.ops.clear();
+impl InstStartSave {
+    #[must_use]
+    fn new(slot_id: usize, next: InstIndex) -> Self {
+        Self { slot_id, next }
+    }
+}
 
-        'LOOP: loop {
-            if cache.clist.ops.is_empty() {
-                self.add(&mut cache.stack, &mut cache.clist, InstPtr(0), at);
-            }
+impl Display for InstStartSave {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "StartSave[{:04}]: ({:04})",
+            self.slot_id,
+            self.next.as_usize()
+        )
+    }
+}
 
-            for i in 0..cache.clist.ops.len() {
-                let ip = cache.clist.ops[i];
-                if self.step(&mut cache.stack, &mut cache.nlist, InstPtr(ip), at) {
-                    matched = true;
-                    all_matched = true;
+#[derive(Debug)]
+struct InstEndSave {
+    slot_id: usize,
+    next: InstIndex,
+}
 
-                    if quit_after_match {
-                        break 'LOOP;
-                    }
-                }
-            }
-            if at.as_usize() >= end.as_usize() {
-                break;
-            }
-            at = at.next_pos();
-            core::mem::swap(&mut cache.clist, &mut cache.nlist);
-            cache.nlist.ops.clear();
+impl InstEndSave {
+    #[must_use]
+    fn new(slot_id: usize, next: InstIndex) -> Self {
+        Self { slot_id, next }
+    }
+}
+
+impl Display for InstEndSave {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "EndSave[{:04}]: ({:04})",
+            self.slot_id,
+            self.next.as_usize()
+        )
+    }
+}
+
+fn get_at(input: &str, idx: usize) -> Option<char> {
+    input[idx..].chars().next()
+}
+
+fn add_thread(
+    program: &[Instruction],
+    save_groups: &mut Vec<Saved>,
+    mut thread_list: Threads,
+    t: Thread,
+    sp: usize,
+    input: &str,
+) -> Threads {
+    // Don't visit states we've already added.
+    let pc = t.inst;
+    let ip = program.get(pc.as_usize());
+    let inst = match ip {
+        // if the tread is already defined return
+        Some(inst) if thread_list.ops.contains(inst.id) => return thread_list,
+        // if it's the end of the program without a match instruction return.
+        None => return thread_list,
+        Some(inst) => {
+            thread_list.ops.insert_unchecked(inst.id);
+            inst
         }
-        matched
-    }
+    };
 
-    fn step(
-        &mut self,
-        stack: &mut Vec<Follow>,
-        thread_list: &mut Threads,
-        ip: InstPtr,
-        at: InputPtr,
-    ) -> bool {
-        use Instruction::*;
-
-        match self.program[ip] {
-            Match => true,
-            Consume(ref inst) => {
-                if self.input[at.as_usize()] == inst.value {
-                    let next = inst.next;
-                    self.add(stack, thread_list, next, at.next_pos());
-                }
-
-                false
-            }
-            Split(_) => false,
+    let opcode = &inst.opcode;
+    match opcode {
+        Opcode::Split(i) => {
+            let x = i.next1;
+            let y = i.next2;
+            let child_thread1 = Thread::new(t.save_group + 1, x);
+            thread_list = add_thread(program, save_groups, thread_list, child_thread1, sp, input);
+            let child_thread2 = Thread::new(t.save_group, y);
+            add_thread(program, save_groups, thread_list, child_thread2, sp, input)
         }
-    }
-
-    fn add(
-        &mut self,
-        stack: &mut Vec<Follow>,
-        thread_list: &mut Threads,
-        start: InstPtr,
-        at: InputPtr,
-    ) -> InstPtr {
-        stack.push(Follow::InstPtr(start));
-
-        let mut ip = start;
-
-        while let Some(frame) = stack.pop() {
-            ip = match frame {
-                Follow::InstPtr(ip) => self.add_step(stack, thread_list, ip, at),
+        Opcode::Jmp(i) => {
+            let next = i.next;
+            let child_thread = Thread::new(t.save_group, next);
+            add_thread(program, save_groups, thread_list, child_thread, sp, input)
+        }
+        Opcode::StartSave(i) => {
+            let next = i.next;
+            let slot = i.slot_id;
+            save_groups[slot] = Saved::Open {
+                slot_id: slot,
+                start: sp,
             };
+            let child_thread = Thread::new(slot, next);
+            add_thread(program, save_groups, thread_list, child_thread, sp, input)
         }
+        Opcode::EndSave(i) => {
+            let next = i.next;
+            let slot = i.slot_id;
+            let closed_save = match save_groups[slot] {
+                Saved::Open { slot_id, start } => Saved::Complete {
+                    slot_id,
+                    start,
+                    end: sp,
+                },
 
-        ip
-    }
-
-    fn add_step(
-        &mut self,
-        stack: &mut Vec<Follow>,
-        thread_list: &mut Threads,
-        start: InstPtr,
-        _at: InputPtr,
-    ) -> InstPtr {
-        use Instruction::*;
-
-        let mut ip = start;
-        loop {
-            // Don't visit states we've already added.
-            if thread_list.ops.contains(ip.as_usize()) {
-                return ip;
-            } else {
-                thread_list.ops.insert(ip.as_usize());
-            }
-
-            match self.program[ip] {
-                Split(ref inst) => {
-                    stack.push(Follow::InstPtr(inst.next2));
-                    ip = inst.next1;
-                }
-                Match | Consume(_) => {
-                    return ip;
-                }
-            }
+                _ => panic!("attempting to close an unopened save."),
+            };
+            save_groups[slot] = closed_save;
+            let child_thread = Thread::new(slot, next);
+            add_thread(program, save_groups, thread_list, child_thread, sp, input)
+        }
+        _ => {
+            thread_list.threads.push(t);
+            thread_list
         }
     }
+}
+
+pub fn run(program: &[Instruction], input: &str) -> Vec<Saved> {
+    use core::mem::swap;
+
+    let input_len = input.len();
+    let program_len = program.len();
+
+    let mut source_idx = 0;
+    let mut current_thread_list = Threads::with_set_size(program_len);
+    let mut next_thread_list = Threads::with_set_size(program_len);
+    let mut sub = vec![Saved::None; program_len];
+
+    let start_thread = Thread::new(0, InstIndex::from(0));
+    current_thread_list = add_thread(
+        program,
+        &mut sub,
+        current_thread_list,
+        start_thread,
+        source_idx,
+        input,
+    );
+
+    'outer: while source_idx < input_len {
+        for thread in current_thread_list.threads.iter() {
+            let inst_idx = thread.inst;
+            let opcode = program.get(inst_idx.as_usize()).map(|i| &i.opcode);
+
+            match opcode {
+                Some(Opcode::Any(_)) => {
+                    let next_char = get_at(input, source_idx);
+                    if next_char.is_none() {
+                        break;
+                    };
+
+                    source_idx += 1;
+                    let t = Thread::new(0, inst_idx + 1);
+
+                    next_thread_list =
+                        add_thread(program, &mut sub, next_thread_list, t, source_idx, input);
+                }
+                Some(Opcode::Consume(i)) => {
+                    let next_char = get_at(input, source_idx);
+                    if Some(i.value) != next_char {
+                        break;
+                    };
+                    source_idx += 1;
+                    let t = Thread::new(0, inst_idx + 1);
+
+                    next_thread_list =
+                        add_thread(program, &mut sub, next_thread_list, t, source_idx, input);
+                }
+                Some(Opcode::Match) => {
+                    // set a condition breaking source_idx to break the outter while loop.
+                    break 'outer;
+                }
+                None => {
+                    break 'outer;
+                }
+                _ => continue,
+            }
+        }
+
+        source_idx += 1;
+    }
+    swap(&mut current_thread_list, &mut next_thread_list);
+    next_thread_list.ops.clear();
+
+    sub
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn construct_sequential_consume_pattern_from_str(input: &str) -> Instructions<char> {
-        let consumes = input
-            .chars()
-            .enumerate()
-            .map(|(pos, c)| Instruction::Consume(InstConsume::new(c, InstPtr::from(pos + 1))));
-        let insts = consumes
-            .chain(vec![Instruction::Match].into_iter())
-            .collect();
+    fn pad_match_results_to(mut matches: Vec<Saved>, pad_to: usize) -> Vec<Saved> {
+        let cur_len = matches.len();
 
-        Instructions::new(insts)
+        if pad_to > cur_len {
+            matches.resize_with(pad_to, || Saved::None);
+        }
+        matches
     }
 
     #[test]
     fn should_evaluate_single_character_match_expression() {
         let progs = vec![
-            (true, construct_sequential_consume_pattern_from_str("a")),
-            (true, construct_sequential_consume_pattern_from_str("aab")),
-            (false, construct_sequential_consume_pattern_from_str("b")),
+            (
+                pad_match_results_to(vec![Saved::complete(0, 0, 1)], 4),
+                Instructions::new(vec![
+                    Opcode::StartSave(InstStartSave::new(0, InstIndex::from(1))),
+                    Opcode::Consume(InstConsume::new('a', InstIndex::from(2))),
+                    Opcode::EndSave(InstEndSave::new(0, InstIndex::from(3))),
+                    Opcode::Match,
+                ]),
+            ),
+            //            (true, construct_sequential_consume_pattern_from_str("aab")),
+            //            (false, construct_sequential_consume_pattern_from_str("b")),
         ];
 
-        let input = ['a', 'a', 'b'];
+        let input = "aab";
 
         for (expected_res, prog) in progs {
-            let mut cache = ThreadCache::new();
-            let res = StateMachine::<char, [char]>::exec(
-                &mut cache,
-                &prog,
-                input.as_ref(),
-                true,
-                InputPtr(0),
-                InputPtr(2),
-            );
-
-            assert_eq!(expected_res, res);
+            let res = run(&prog.program, input);
+            assert_eq!(expected_res, res)
         }
     }
 
     #[test]
     fn should_print_test_instructions() {
         let prog = Instructions::new(vec![
-            Instruction::Consume(InstConsume::new('a', InstPtr::from(1))),
-            Instruction::Consume(InstConsume::new('b', InstPtr::from(2))),
-            Instruction::Match,
+            Opcode::Consume(InstConsume::new('a', InstIndex::from(1))),
+            Opcode::Consume(InstConsume::new('b', InstIndex::from(2))),
+            Opcode::Match,
         ]);
 
         assert_eq!(
