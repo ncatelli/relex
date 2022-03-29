@@ -1,4 +1,4 @@
-use super::sparse_set::SparseSet;
+use collections_ext::set::sparse::SparseSet;
 use std::fmt::{Debug, Display};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,16 +64,6 @@ impl Threads {
             threads: vec![],
             ops,
         }
-    }
-
-    pub fn resize(&mut self, new_size: usize) {
-        use core::mem::swap;
-        let mut ops = SparseSet::new(new_size);
-        for item in ops.iter().copied() {
-            self.ops.insert_unchecked(item)
-        }
-
-        swap(&mut self.ops, &mut ops);
     }
 }
 
@@ -380,11 +370,11 @@ fn add_thread(
     let ip = program.get(pc.as_usize());
     let inst = match ip {
         // if the tread is already defined return
-        Some(inst) if thread_list.ops.contains(inst.id) => return thread_list,
+        Some(inst) if thread_list.ops.contains(&inst.id) => return thread_list,
         // if it's the end of the program without a match instruction return.
         None => return thread_list,
         Some(inst) => {
-            thread_list.ops.insert_unchecked(inst.id);
+            thread_list.ops.insert(inst.id);
             inst
         }
     };
