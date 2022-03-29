@@ -1,9 +1,61 @@
 use collections_ext::set::sparse::SparseSet;
 use std::fmt::{Debug, Display};
 
+/// Represents a defined match group for a pattern.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Saved {
+pub enum SaveGroupSlot {
     None,
+    Complete {
+        slot_id: usize,
+        start: usize,
+        end: usize,
+    },
+}
+
+impl SaveGroupSlot {
+    /// returns a completed
+    pub fn complete(slot_id: usize, start: usize, end: usize) -> Self {
+        Self::Complete {
+            slot_id,
+            start,
+            end,
+        }
+    }
+}
+
+impl From<SaveGroup> for SaveGroupSlot {
+    fn from(src: SaveGroup) -> Self {
+        match src {
+            SaveGroup::None => SaveGroupSlot::None,
+
+            SaveGroup::Allocated { slot_id } => SaveGroupSlot::None,
+            SaveGroup::Open { .. } => SaveGroupSlot::None,
+            SaveGroup::Complete {
+                slot_id,
+                start,
+                end,
+            } => SaveGroupSlot::Complete {
+                slot_id,
+                start,
+                end,
+            },
+        }
+    }
+}
+
+impl Default for SaveGroupSlot {
+    fn default() -> Self {
+        SaveGroupSlot::None
+    }
+}
+
+/// Represents a Save Group as tracked on an open thread
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveGroup {
+    None,
+    Allocated {
+        slot_id: usize,
+    },
     Open {
         slot_id: usize,
         start: usize,
@@ -15,7 +67,15 @@ pub enum Saved {
     },
 }
 
-impl Saved {
+impl SaveGroup {
+    pub fn allocated(slot_id: usize) -> Self {
+        Self::Allocated { slot_id }
+    }
+
+    pub fn open(slot_id: usize, start: usize) -> Self {
+        Self::Open { slot_id, start }
+    }
+
     pub fn complete(slot_id: usize, start: usize, end: usize) -> Self {
         Self::Complete {
             slot_id,
@@ -23,21 +83,16 @@ impl Saved {
             end,
         }
     }
-
-    pub fn open(slot_id: usize, start: usize) -> Self {
-        Self::Open { slot_id, start }
-    }
 }
 
 #[derive(Debug)]
 pub struct Thread {
-    save_group: Option<usize>,
+    save_group: SaveGroup,
     inst: InstIndex,
 }
 
 impl Thread {
-    #[must_use]
-    pub fn new(save_group: Option<usize>, inst: InstIndex) -> Self {
+    pub fn new(save_group: SaveGroup, inst: InstIndex) -> Self {
         Self { save_group, inst }
     }
 }
@@ -63,21 +118,6 @@ impl Threads {
         Self {
             threads: vec![],
             ops,
-        }
-    }
-}
-
-pub struct ThreadCache {
-    nlist: Threads,
-    clist: Threads,
-}
-
-impl ThreadCache {
-    #[must_use]
-    pub fn new(size: usize) -> Self {
-        Self {
-            nlist: Threads::with_set_size(size),
-            clist: Threads::with_set_size(size),
         }
     }
 }
@@ -359,7 +399,7 @@ fn get_at(input: &str, idx: usize) -> Option<char> {
 
 fn add_thread(
     program: &[Instruction],
-    save_groups: &mut Vec<Saved>,
+    save_groups: &mut Vec<SaveGroupSlot>,
     mut thread_list: Threads,
     t: Thread,
     sp: usize,
@@ -386,29 +426,29 @@ fn add_thread(
             let y = i.next2;
             let child_thread1 = Thread::new(t.save_group, x);
             thread_list = add_thread(program, save_groups, thread_list, child_thread1, sp, input);
+
             let child_thread2 = Thread::new(t.save_group, y);
             add_thread(program, save_groups, thread_list, child_thread2, sp, input)
         }
         Opcode::Jmp(i) => {
             let next = i.next;
+
             let child_thread = Thread::new(t.save_group, next);
             add_thread(program, save_groups, thread_list, child_thread, sp, input)
         }
         Opcode::StartSave(i) => {
             let next = i.next;
             let slot = i.slot_id;
-            save_groups[slot] = Saved::Open {
-                slot_id: slot,
-                start: sp,
-            };
-            let child_thread = Thread::new(Some(slot), next);
+            let save_group = SaveGroup::Allocated { slot_id: slot };
+
+            let child_thread = Thread::new(save_group, next);
             add_thread(program, save_groups, thread_list, child_thread, sp, input)
         }
         Opcode::EndSave(InstEndSave { slot_id, next }) => {
             let next = *next;
             let slot = *slot_id;
-            let closed_save = match save_groups[slot] {
-                Saved::Open { slot_id, start } => Saved::Complete {
+            let closed_save = match t.save_group {
+                SaveGroup::Open { slot_id, start } => SaveGroup::Complete {
                     slot_id,
                     start,
                     end: sp,
@@ -416,8 +456,10 @@ fn add_thread(
 
                 _ => panic!("attempting to close an unopened save."),
             };
-            save_groups[slot] = closed_save;
-            let child_thread = Thread::new(None, next);
+
+            save_groups[slot] = SaveGroupSlot::from(closed_save);
+
+            let child_thread = Thread::new(closed_save, next);
             add_thread(program, save_groups, thread_list, child_thread, sp, input)
         }
         _ => {
@@ -427,56 +469,75 @@ fn add_thread(
     }
 }
 
-pub fn run(program: &[Instruction], input: &str) -> Vec<Saved> {
+pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGroupSlot> {
     use core::mem::swap;
 
     let input_len = input.len();
     let program_len = program.len();
 
-    let mut source_idx = 0;
+    let mut input_idx = 0;
     let mut current_thread_list = Threads::with_set_size(program_len);
     let mut next_thread_list = Threads::with_set_size(program_len);
-    let mut sub = vec![Saved::None; program_len];
+    let mut sub = vec![SaveGroupSlot::None; SG];
 
-    let start_thread = Thread::new(None, InstIndex::from(0));
+    let start_thread = Thread::new(SaveGroup::None, InstIndex::from(0));
     current_thread_list = add_thread(
         program,
         &mut sub,
         current_thread_list,
         start_thread,
-        source_idx,
+        input_idx,
         input,
     );
 
-    'outer: while source_idx < input_len {
+    'outer: while input_idx <= input_len {
         for thread in current_thread_list.threads.iter() {
-            let slot_id = thread.save_group;
-            let next_char = get_at(input, source_idx);
+            let save_group = thread.save_group;
+            let next_char = get_at(input, input_idx);
             let inst_idx = thread.inst;
             let opcode = program.get(inst_idx.as_usize()).map(|i| &i.opcode);
 
             match opcode {
-                Some(Opcode::Any(_)) => {
-                    if next_char.is_none() {
-                        break;
-                    };
-
-                    source_idx += 1;
-                    let t = Thread::new(slot_id, inst_idx + 1);
-
-                    next_thread_list =
-                        add_thread(program, &mut sub, next_thread_list, t, source_idx, input);
+                Some(Opcode::Any(_)) if next_char.is_none() => {
+                    break;
                 }
-                Some(Opcode::Consume(i)) => {
-                    if Some(i.value) != next_char {
-                        break;
-                    };
+                Some(Opcode::Any(i)) => {
+                    let thread_local_save_group =
+                        if let SaveGroup::Allocated { slot_id } = save_group {
+                            SaveGroup::open(slot_id, input_idx)
+                        } else {
+                            save_group
+                        };
 
-                    source_idx += 1;
-                    let t = Thread::new(slot_id, inst_idx + 1);
+                    next_thread_list = add_thread(
+                        program,
+                        &mut sub,
+                        next_thread_list,
+                        Thread::new(thread_local_save_group, i.next),
+                        input_idx + 1,
+                        input,
+                    );
+                }
+                Some(Opcode::Consume(InstConsume { value, next })) if Some(*value) == next_char => {
+                    let thread_local_save_group =
+                        if let SaveGroup::Allocated { slot_id } = save_group {
+                            SaveGroup::open(slot_id, input_idx)
+                        } else {
+                            save_group
+                        };
 
-                    next_thread_list =
-                        add_thread(program, &mut sub, next_thread_list, t, source_idx, input);
+                    next_thread_list = add_thread(
+                        program,
+                        &mut sub,
+                        next_thread_list,
+                        Thread::new(thread_local_save_group, *next),
+                        input_idx + 1,
+                        input,
+                    );
+                }
+                // next value doesn't match
+                Some(Opcode::Consume(_)) => {
+                    break;
                 }
                 Some(Opcode::Match) => {
                     // set a condition breaking source_idx to break the outter while loop.
@@ -489,10 +550,10 @@ pub fn run(program: &[Instruction], input: &str) -> Vec<Saved> {
             }
         }
 
-        source_idx += 1;
+        input_idx += 1;
+        swap(&mut current_thread_list, &mut next_thread_list);
+        next_thread_list.ops.clear();
     }
-    swap(&mut current_thread_list, &mut next_thread_list);
-    next_thread_list.ops.clear();
 
     sub
 }
@@ -501,11 +562,11 @@ pub fn run(program: &[Instruction], input: &str) -> Vec<Saved> {
 mod tests {
     use super::*;
 
-    fn pad_match_results_to(mut matches: Vec<Saved>, pad_to: usize) -> Vec<Saved> {
+    fn pad_match_results_to(mut matches: Vec<SaveGroupSlot>, pad_to: usize) -> Vec<SaveGroupSlot> {
         let cur_len = matches.len();
 
         if pad_to > cur_len {
-            matches.resize_with(pad_to, || Saved::None);
+            matches.resize_with(pad_to, || SaveGroupSlot::None);
         }
         matches
     }
@@ -514,7 +575,7 @@ mod tests {
     fn should_evaluate_single_character_match_expression() {
         let progs = vec![
             (
-                pad_match_results_to(vec![Saved::complete(0, 0, 1)], 4),
+                pad_match_results_to(vec![SaveGroupSlot::complete(0, 0, 1)], 1),
                 Instructions::new(vec![
                     Opcode::StartSave(InstStartSave::new(0, InstIndex::from(1))),
                     Opcode::Consume(InstConsume::new('a', InstIndex::from(2))),
@@ -522,14 +583,31 @@ mod tests {
                     Opcode::Match,
                 ]),
             ),
-            //            (true, construct_sequential_consume_pattern_from_str("aab")),
-            //            (false, construct_sequential_consume_pattern_from_str("b")),
+            (
+                pad_match_results_to(vec![SaveGroupSlot::complete(0, 0, 2)], 1),
+                Instructions::new(vec![
+                    Opcode::StartSave(InstStartSave::new(0, InstIndex::from(1))),
+                    Opcode::Consume(InstConsume::new('a', InstIndex::from(2))),
+                    Opcode::Consume(InstConsume::new('a', InstIndex::from(3))),
+                    Opcode::EndSave(InstEndSave::new(0, InstIndex::from(4))),
+                    Opcode::Match,
+                ]),
+            ),
+            (
+                pad_match_results_to(vec![SaveGroupSlot::complete(0, 2, 3)], 1),
+                Instructions::new(vec![
+                    Opcode::StartSave(InstStartSave::new(0, InstIndex::from(1))),
+                    Opcode::Consume(InstConsume::new('b', InstIndex::from(2))),
+                    Opcode::EndSave(InstEndSave::new(0, InstIndex::from(3))),
+                    Opcode::Match,
+                ]),
+            ),
         ];
 
         let input = "aab";
 
         for (expected_res, prog) in progs {
-            let res = run(&prog.program, input);
+            let res = run::<1>(&prog.program, input);
             assert_eq!(expected_res, res)
         }
     }
