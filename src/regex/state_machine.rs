@@ -31,13 +31,13 @@ impl Saved {
 
 #[derive(Debug)]
 pub struct Thread {
-    save_group: usize,
+    save_group: Option<usize>,
     inst: InstIndex,
 }
 
 impl Thread {
     #[must_use]
-    pub fn new(save_group: usize, inst: InstIndex) -> Self {
+    pub fn new(save_group: Option<usize>, inst: InstIndex) -> Self {
         Self { save_group, inst }
     }
 }
@@ -384,7 +384,7 @@ fn add_thread(
         Opcode::Split(i) => {
             let x = i.next1;
             let y = i.next2;
-            let child_thread1 = Thread::new(t.save_group + 1, x);
+            let child_thread1 = Thread::new(t.save_group, x);
             thread_list = add_thread(program, save_groups, thread_list, child_thread1, sp, input);
             let child_thread2 = Thread::new(t.save_group, y);
             add_thread(program, save_groups, thread_list, child_thread2, sp, input)
@@ -401,12 +401,12 @@ fn add_thread(
                 slot_id: slot,
                 start: sp,
             };
-            let child_thread = Thread::new(slot, next);
+            let child_thread = Thread::new(Some(slot), next);
             add_thread(program, save_groups, thread_list, child_thread, sp, input)
         }
-        Opcode::EndSave(i) => {
-            let next = i.next;
-            let slot = i.slot_id;
+        Opcode::EndSave(InstEndSave { slot_id, next }) => {
+            let next = *next;
+            let slot = *slot_id;
             let closed_save = match save_groups[slot] {
                 Saved::Open { slot_id, start } => Saved::Complete {
                     slot_id,
@@ -417,7 +417,7 @@ fn add_thread(
                 _ => panic!("attempting to close an unopened save."),
             };
             save_groups[slot] = closed_save;
-            let child_thread = Thread::new(slot, next);
+            let child_thread = Thread::new(None, next);
             add_thread(program, save_groups, thread_list, child_thread, sp, input)
         }
         _ => {
@@ -438,7 +438,7 @@ pub fn run(program: &[Instruction], input: &str) -> Vec<Saved> {
     let mut next_thread_list = Threads::with_set_size(program_len);
     let mut sub = vec![Saved::None; program_len];
 
-    let start_thread = Thread::new(0, InstIndex::from(0));
+    let start_thread = Thread::new(None, InstIndex::from(0));
     current_thread_list = add_thread(
         program,
         &mut sub,
@@ -450,29 +450,30 @@ pub fn run(program: &[Instruction], input: &str) -> Vec<Saved> {
 
     'outer: while source_idx < input_len {
         for thread in current_thread_list.threads.iter() {
+            let slot_id = thread.save_group;
+            let next_char = get_at(input, source_idx);
             let inst_idx = thread.inst;
             let opcode = program.get(inst_idx.as_usize()).map(|i| &i.opcode);
 
             match opcode {
                 Some(Opcode::Any(_)) => {
-                    let next_char = get_at(input, source_idx);
                     if next_char.is_none() {
                         break;
                     };
 
                     source_idx += 1;
-                    let t = Thread::new(0, inst_idx + 1);
+                    let t = Thread::new(slot_id, inst_idx + 1);
 
                     next_thread_list =
                         add_thread(program, &mut sub, next_thread_list, t, source_idx, input);
                 }
                 Some(Opcode::Consume(i)) => {
-                    let next_char = get_at(input, source_idx);
                     if Some(i.value) != next_char {
                         break;
                     };
+
                     source_idx += 1;
-                    let t = Thread::new(0, inst_idx + 1);
+                    let t = Thread::new(slot_id, inst_idx + 1);
 
                     next_thread_list =
                         add_thread(program, &mut sub, next_thread_list, t, source_idx, input);
