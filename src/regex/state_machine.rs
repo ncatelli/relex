@@ -625,47 +625,42 @@ mod tests {
     }
 
     #[test]
-    fn should_evaluate_internal_match_expression() {
-        let (expected_res, prog) = (
-            vec![SaveGroupSlot::complete(0, 1, 3)],
-            Instructions::new(vec![
-                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
-                Opcode::Any(InstAny::new(InstIndex::from(2))),
-                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
-                Opcode::StartSave(InstStartSave::new(0, InstIndex::from(4))),
-                Opcode::Consume(InstConsume::new('a', InstIndex::from(5))),
-                Opcode::Consume(InstConsume::new('b', InstIndex::from(6))),
-                Opcode::EndSave(InstEndSave::new(0, InstIndex::from(7))),
-                Opcode::Match,
-            ]),
-        );
+    fn should_evaluate_consecutive_diverging_match_expression() {
+        let progs = vec![
+            (
+                vec![SaveGroupSlot::complete(0, 0, 2)],
+                Instructions::new(vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
+                    Opcode::Any(InstAny::new(InstIndex::from(2))),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                    Opcode::StartSave(InstStartSave::new(0, InstIndex::from(4))),
+                    Opcode::Consume(InstConsume::new('a', InstIndex::from(5))),
+                    Opcode::Consume(InstConsume::new('a', InstIndex::from(6))),
+                    Opcode::EndSave(InstEndSave::new(0, InstIndex::from(7))),
+                    Opcode::Match,
+                ]),
+            ),
+            (
+                vec![SaveGroupSlot::complete(0, 1, 3)],
+                Instructions::new(vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
+                    Opcode::Any(InstAny::new(InstIndex::from(2))),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                    Opcode::StartSave(InstStartSave::new(0, InstIndex::from(4))),
+                    Opcode::Consume(InstConsume::new('a', InstIndex::from(5))),
+                    Opcode::Consume(InstConsume::new('b', InstIndex::from(6))),
+                    Opcode::EndSave(InstEndSave::new(0, InstIndex::from(7))),
+                    Opcode::Match,
+                ]),
+            ),
+        ];
 
         let input = "aab";
 
-        let res = run::<1>(&prog.program, input);
-        assert_eq!(expected_res, res)
-    }
-
-    #[test]
-    fn should_evaluate_split_match_expression() {
-        let (expected_res, prog) = (
-            vec![SaveGroupSlot::complete(0, 0, 2)],
-            Instructions::new(vec![
-                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
-                Opcode::Any(InstAny::new(InstIndex::from(2))),
-                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
-                Opcode::StartSave(InstStartSave::new(0, InstIndex::from(4))),
-                Opcode::Consume(InstConsume::new('a', InstIndex::from(5))),
-                Opcode::Consume(InstConsume::new('a', InstIndex::from(6))),
-                Opcode::EndSave(InstEndSave::new(0, InstIndex::from(7))),
-                Opcode::Match,
-            ]),
-        );
-
-        let input = "aab";
-
-        let res = run::<1>(&prog.program, input);
-        assert_eq!(expected_res, res)
+        for (test_num, (expected_res, prog)) in progs.into_iter().enumerate() {
+            let res = run::<1>(&prog.program, input);
+            assert_eq!((test_num, expected_res), (test_num, res))
+        }
     }
 
     #[test]
