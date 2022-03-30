@@ -99,7 +99,7 @@ impl Thread {
 
 #[derive(Debug)]
 pub struct Threads {
-    ops: SparseSet,
+    gen: SparseSet,
     threads: Vec<Thread>,
 }
 
@@ -109,7 +109,7 @@ impl Threads {
         let ops = SparseSet::new(0);
         Self {
             threads: vec![],
-            ops,
+            gen: ops,
         }
     }
 
@@ -117,7 +117,7 @@ impl Threads {
         let ops = SparseSet::new(set_capacity);
         Self {
             threads: vec![],
-            ops,
+            gen: ops,
         }
     }
 }
@@ -339,7 +339,6 @@ struct InstJmp {
 }
 
 impl InstJmp {
-    #[must_use]
     fn new(next: InstIndex) -> Self {
         Self { next }
     }
@@ -416,43 +415,59 @@ fn add_thread(
     let ip = program.get(pc.as_usize());
     let inst = match ip {
         // if the tread is already defined return
-        Some(inst) if thread_list.ops.contains(&inst.id) => return thread_list,
+        Some(inst) if thread_list.gen.contains(&inst.id) => return thread_list,
         // if it's the end of the program without a match instruction return.
         None => return thread_list,
         Some(inst) => {
-            thread_list.ops.insert(inst.id);
+            thread_list.gen.insert(inst.id);
             inst
         }
     };
 
     let opcode = &inst.opcode;
     match opcode {
-        Opcode::Split(i) => {
-            let x = i.next1;
-            let y = i.next2;
-            let child_thread1 = Thread::new(t.save_group, x);
-            thread_list = add_thread(program, save_groups, thread_list, child_thread1, sp, input);
+        Opcode::Split(InstSplit { next1, next2 }) => {
+            let x = *next1;
+            let y = *next2;
+            thread_list = add_thread(
+                program,
+                save_groups,
+                thread_list,
+                Thread::new(t.save_group, x),
+                sp,
+                input,
+            );
 
-            let child_thread2 = Thread::new(t.save_group, y);
-            add_thread(program, save_groups, thread_list, child_thread2, sp, input)
+            add_thread(
+                program,
+                save_groups,
+                thread_list,
+                Thread::new(t.save_group, y),
+                sp,
+                input,
+            )
         }
-        Opcode::Jmp(i) => {
-            let next = i.next;
+        Opcode::Jmp(InstJmp { next }) => add_thread(
+            program,
+            save_groups,
+            thread_list,
+            Thread::new(t.save_group, *next),
+            sp,
+            input,
+        ),
+        Opcode::StartSave(InstStartSave { slot_id, next }) => {
+            let save_group = SaveGroup::Allocated { slot_id: *slot_id };
 
-            let child_thread = Thread::new(t.save_group, next);
-            add_thread(program, save_groups, thread_list, child_thread, sp, input)
-        }
-        Opcode::StartSave(i) => {
-            let next = i.next;
-            let slot = i.slot_id;
-            let save_group = SaveGroup::Allocated { slot_id: slot };
-
-            let child_thread = Thread::new(save_group, next);
-            add_thread(program, save_groups, thread_list, child_thread, sp, input)
+            add_thread(
+                program,
+                save_groups,
+                thread_list,
+                Thread::new(save_group, *next),
+                sp,
+                input,
+            )
         }
         Opcode::EndSave(InstEndSave { slot_id, next }) => {
-            let next = *next;
-            let slot = *slot_id;
             let closed_save = match t.save_group {
                 SaveGroup::Open { slot_id, start } => SaveGroup::Complete {
                     slot_id,
@@ -463,10 +478,15 @@ fn add_thread(
                 _ => panic!("attempting to close an unopened save."),
             };
 
-            save_groups[slot] = SaveGroupSlot::from(closed_save);
-
-            let child_thread = Thread::new(closed_save, next);
-            add_thread(program, save_groups, thread_list, child_thread, sp, input)
+            save_groups[*slot_id] = SaveGroupSlot::from(closed_save);
+            add_thread(
+                program,
+                save_groups,
+                thread_list,
+                Thread::new(closed_save, *next),
+                sp,
+                input,
+            )
         }
         _ => {
             thread_list.threads.push(t);
@@ -484,14 +504,14 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
     let mut input_idx = 0;
     let mut current_thread_list = Threads::with_set_size(program_len);
     let mut next_thread_list = Threads::with_set_size(program_len);
+
     let mut sub = vec![SaveGroupSlot::None; SG];
 
-    let start_thread = Thread::new(SaveGroup::None, InstIndex::from(0));
     current_thread_list = add_thread(
         program,
         &mut sub,
         current_thread_list,
-        start_thread,
+        Thread::new(SaveGroup::None, InstIndex::from(0)),
         input_idx,
         input,
     );
@@ -507,7 +527,7 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
                 Some(Opcode::Any(_)) if next_char.is_none() => {
                     break;
                 }
-                Some(Opcode::Any(i)) => {
+                Some(Opcode::Any(InstAny { next })) => {
                     let thread_local_save_group =
                         if let SaveGroup::Allocated { slot_id } = save_group {
                             SaveGroup::open(slot_id, input_idx)
@@ -519,7 +539,7 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
                         program,
                         &mut sub,
                         next_thread_list,
-                        Thread::new(thread_local_save_group, i.next),
+                        Thread::new(thread_local_save_group, *next),
                         input_idx + 1,
                         input,
                     );
@@ -543,7 +563,7 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
                 }
                 // next value doesn't match
                 Some(Opcode::Consume(_)) => {
-                    break;
+                    continue;
                 }
                 Some(Opcode::Match) => {
                     // set a condition breaking source_idx to break the outter while loop.
@@ -558,7 +578,12 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
 
         input_idx += 1;
         swap(&mut current_thread_list, &mut next_thread_list);
-        next_thread_list.ops.clear();
+        next_thread_list.threads.clear();
+        next_thread_list.gen.clear();
+
+        if current_thread_list.threads.is_empty() {
+            break 'outer;
+        }
     }
 
     sub
@@ -568,20 +593,11 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
 mod tests {
     use super::*;
 
-    fn pad_match_results_to(mut matches: Vec<SaveGroupSlot>, pad_to: usize) -> Vec<SaveGroupSlot> {
-        let cur_len = matches.len();
-
-        if pad_to > cur_len {
-            matches.resize_with(pad_to, || SaveGroupSlot::None);
-        }
-        matches
-    }
-
     #[test]
     fn should_evaluate_simple_linear_match_expression() {
         let progs = vec![
             (
-                pad_match_results_to(vec![SaveGroupSlot::complete(0, 0, 1)], 1),
+                vec![SaveGroupSlot::complete(0, 0, 1)],
                 Instructions::new(vec![
                     Opcode::StartSave(InstStartSave::new(0, InstIndex::from(1))),
                     Opcode::Consume(InstConsume::new('a', InstIndex::from(2))),
@@ -590,17 +606,7 @@ mod tests {
                 ]),
             ),
             (
-                pad_match_results_to(vec![SaveGroupSlot::complete(0, 0, 2)], 1),
-                Instructions::new(vec![
-                    Opcode::StartSave(InstStartSave::new(0, InstIndex::from(1))),
-                    Opcode::Consume(InstConsume::new('a', InstIndex::from(2))),
-                    Opcode::Consume(InstConsume::new('a', InstIndex::from(3))),
-                    Opcode::EndSave(InstEndSave::new(0, InstIndex::from(4))),
-                    Opcode::Match,
-                ]),
-            ),
-            (
-                pad_match_results_to(vec![SaveGroupSlot::complete(0, 2, 3)], 1),
+                vec![SaveGroupSlot::None],
                 Instructions::new(vec![
                     Opcode::StartSave(InstStartSave::new(0, InstIndex::from(1))),
                     Opcode::Consume(InstConsume::new('b', InstIndex::from(2))),
@@ -619,16 +625,39 @@ mod tests {
     }
 
     #[test]
+    fn should_evaluate_internal_match_expression() {
+        let (expected_res, prog) = (
+            vec![SaveGroupSlot::complete(0, 1, 3)],
+            Instructions::new(vec![
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
+                Opcode::Any(InstAny::new(InstIndex::from(2))),
+                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                Opcode::StartSave(InstStartSave::new(0, InstIndex::from(4))),
+                Opcode::Consume(InstConsume::new('a', InstIndex::from(5))),
+                Opcode::Consume(InstConsume::new('b', InstIndex::from(6))),
+                Opcode::EndSave(InstEndSave::new(0, InstIndex::from(7))),
+                Opcode::Match,
+            ]),
+        );
+
+        let input = "aab";
+
+        let res = run::<1>(&prog.program, input);
+        assert_eq!(expected_res, res)
+    }
+
+    #[test]
     fn should_evaluate_split_match_expression() {
         let (expected_res, prog) = (
-            pad_match_results_to(vec![SaveGroupSlot::complete(0, 0, 2)], 1),
+            vec![SaveGroupSlot::complete(0, 0, 2)],
             Instructions::new(vec![
-                Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(1))),
-                Opcode::Any(InstAny::new(InstIndex::from(0))),
-                Opcode::StartSave(InstStartSave::new(0, InstIndex::from(3))),
-                Opcode::Consume(InstConsume::new('a', InstIndex::from(4))),
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
+                Opcode::Any(InstAny::new(InstIndex::from(2))),
+                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                Opcode::StartSave(InstStartSave::new(0, InstIndex::from(4))),
                 Opcode::Consume(InstConsume::new('a', InstIndex::from(5))),
-                Opcode::EndSave(InstEndSave::new(0, InstIndex::from(6))),
+                Opcode::Consume(InstConsume::new('a', InstIndex::from(6))),
+                Opcode::EndSave(InstEndSave::new(0, InstIndex::from(7))),
                 Opcode::Match,
             ]),
         );
