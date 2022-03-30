@@ -621,13 +621,14 @@ mod tests {
     #[test]
     fn should_evaluate_split_match_expression() {
         let (expected_res, prog) = (
-            pad_match_results_to(vec![SaveGroupSlot::complete(0, 2, 3)], 1),
+            pad_match_results_to(vec![SaveGroupSlot::complete(0, 0, 2)], 1),
             Instructions::new(vec![
                 Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(1))),
                 Opcode::Any(InstAny::new(InstIndex::from(0))),
                 Opcode::StartSave(InstStartSave::new(0, InstIndex::from(3))),
-                Opcode::Consume(InstConsume::new('b', InstIndex::from(4))),
-                Opcode::EndSave(InstEndSave::new(0, InstIndex::from(5))),
+                Opcode::Consume(InstConsume::new('a', InstIndex::from(4))),
+                Opcode::Consume(InstConsume::new('a', InstIndex::from(5))),
+                Opcode::EndSave(InstEndSave::new(0, InstIndex::from(6))),
                 Opcode::Match,
             ]),
         );
