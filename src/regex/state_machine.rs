@@ -273,6 +273,12 @@ struct InstAny {
     next: InstIndex,
 }
 
+impl InstAny {
+    fn new(next: InstIndex) -> Self {
+        Self { next }
+    }
+}
+
 impl Display for InstAny {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Any: ({:04})", self.next.as_usize())
@@ -572,7 +578,7 @@ mod tests {
     }
 
     #[test]
-    fn should_evaluate_single_character_match_expression() {
+    fn should_evaluate_simple_linear_match_expression() {
         let progs = vec![
             (
                 pad_match_results_to(vec![SaveGroupSlot::complete(0, 0, 1)], 1),
@@ -610,6 +616,26 @@ mod tests {
             let res = run::<1>(&prog.program, input);
             assert_eq!(expected_res, res)
         }
+    }
+
+    #[test]
+    fn should_evaluate_split_match_expression() {
+        let (expected_res, prog) = (
+            pad_match_results_to(vec![SaveGroupSlot::complete(0, 2, 3)], 1),
+            Instructions::new(vec![
+                Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(1))),
+                Opcode::Any(InstAny::new(InstIndex::from(0))),
+                Opcode::StartSave(InstStartSave::new(0, InstIndex::from(3))),
+                Opcode::Consume(InstConsume::new('b', InstIndex::from(4))),
+                Opcode::EndSave(InstEndSave::new(0, InstIndex::from(5))),
+                Opcode::Match,
+            ]),
+        );
+
+        let input = "aab";
+
+        let res = run::<1>(&prog.program, input);
+        assert_eq!(expected_res, res)
     }
 
     #[test]
