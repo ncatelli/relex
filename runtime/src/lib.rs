@@ -14,7 +14,7 @@ pub enum SaveGroupSlot {
 
 impl SaveGroupSlot {
     /// returns a completed
-    pub fn complete(slot_id: usize, start: usize, end: usize) -> Self {
+    pub const fn complete(slot_id: usize, start: usize, end: usize) -> Self {
         Self::Complete {
             slot_id,
             start,
@@ -28,7 +28,7 @@ impl From<SaveGroup> for SaveGroupSlot {
         match src {
             SaveGroup::None => SaveGroupSlot::None,
 
-            SaveGroup::Allocated { slot_id } => SaveGroupSlot::None,
+            SaveGroup::Allocated { .. } => SaveGroupSlot::None,
             SaveGroup::Open { .. } => SaveGroupSlot::None,
             SaveGroup::Complete {
                 slot_id,
@@ -104,17 +104,18 @@ pub struct Threads {
 }
 
 impl Threads {
-    #[must_use]
-    pub fn new() -> Self {
-        let ops = SparseSet::new(0);
+    pub fn with_set_size(set_capacity: usize) -> Self {
+        let ops = SparseSet::new(set_capacity);
         Self {
             threads: vec![],
             gen: ops,
         }
     }
+}
 
-    pub fn with_set_size(set_capacity: usize) -> Self {
-        let ops = SparseSet::new(set_capacity);
+impl Default for Threads {
+    fn default() -> Self {
+        let ops = SparseSet::new(0);
         Self {
             threads: vec![],
             gen: ops,
@@ -141,6 +142,10 @@ impl Instructions {
     pub fn len(&self) -> usize {
         self.program.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl Display for Instructions {
@@ -166,6 +171,12 @@ impl std::ops::IndexMut<InstIndex> for Instructions {
     fn index_mut(&mut self, index: InstIndex) -> &mut Self::Output {
         let idx = index.as_usize();
         &mut self.program[idx].opcode
+    }
+}
+
+impl AsRef<[Instruction]> for Instructions {
+    fn as_ref(&self) -> &[Instruction] {
+        &self.program
     }
 }
 
@@ -236,14 +247,6 @@ pub enum Opcode {
     EndSave(InstEndSave),
     Match,
 }
-impl Opcode {
-    fn is_match(&self) -> Option<()> {
-        match self {
-            Self::Match => Some(()),
-            _ => None,
-        }
-    }
-}
 
 impl Display for Opcode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -260,7 +263,7 @@ impl Display for Opcode {
 }
 
 #[derive(Debug)]
-struct InstMatch;
+pub struct InstMatch;
 
 impl Display for InstMatch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -269,12 +272,12 @@ impl Display for InstMatch {
 }
 
 #[derive(Debug)]
-struct InstAny {
+pub struct InstAny {
     next: InstIndex,
 }
 
 impl InstAny {
-    fn new(next: InstIndex) -> Self {
+    pub fn new(next: InstIndex) -> Self {
         Self { next }
     }
 }
@@ -286,14 +289,14 @@ impl Display for InstAny {
 }
 
 #[derive(Debug)]
-struct InstConsume {
+pub struct InstConsume {
     value: char,
     next: InstIndex,
 }
 
 impl InstConsume {
     #[must_use]
-    fn new(value: char, next: InstIndex) -> Self {
+    pub fn new(value: char, next: InstIndex) -> Self {
         Self { value, next }
     }
 }
@@ -310,14 +313,14 @@ impl Display for InstConsume {
 }
 
 #[derive(Debug)]
-struct InstSplit {
+pub struct InstSplit {
     next1: InstIndex,
     next2: InstIndex,
 }
 
 impl InstSplit {
     #[must_use]
-    fn new(next1: InstIndex, next2: InstIndex) -> Self {
+    pub fn new(next1: InstIndex, next2: InstIndex) -> Self {
         Self { next1, next2 }
     }
 }
@@ -334,12 +337,12 @@ impl Display for InstSplit {
 }
 
 #[derive(Debug)]
-struct InstJmp {
+pub struct InstJmp {
     next: InstIndex,
 }
 
 impl InstJmp {
-    fn new(next: InstIndex) -> Self {
+    pub fn new(next: InstIndex) -> Self {
         Self { next }
     }
 }
@@ -351,14 +354,14 @@ impl Display for InstJmp {
 }
 
 #[derive(Debug)]
-struct InstStartSave {
+pub struct InstStartSave {
     slot_id: usize,
     next: InstIndex,
 }
 
 impl InstStartSave {
     #[must_use]
-    fn new(slot_id: usize, next: InstIndex) -> Self {
+    pub fn new(slot_id: usize, next: InstIndex) -> Self {
         Self { slot_id, next }
     }
 }
@@ -375,14 +378,14 @@ impl Display for InstStartSave {
 }
 
 #[derive(Debug)]
-struct InstEndSave {
+pub struct InstEndSave {
     slot_id: usize,
     next: InstIndex,
 }
 
 impl InstEndSave {
     #[must_use]
-    fn new(slot_id: usize, next: InstIndex) -> Self {
+    pub fn new(slot_id: usize, next: InstIndex) -> Self {
         Self { slot_id, next }
     }
 }

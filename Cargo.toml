@@ -1,8 +1,2 @@
-[package]
-name = "relex"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-parcel = { git = "https://github.com/ncatelli/parcel", tag = "v2.0.1" }
-collections-ext = { git = "https://github.com/ncatelli/collections-ext", branch = "main" }
+[workspace]
+members = ["relex", "runtime"]
