@@ -507,6 +507,10 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
     let mut input_idx = 0;
     let mut current_thread_list = Threads::with_set_size(program_len);
     let mut next_thread_list = Threads::with_set_size(program_len);
+    // a running tracker of found matches
+    let mut matches = 0;
+    // the maximum number of matches, equivalent to SG parameter.
+    let max_matches = SG;
 
     let mut sub = vec![SaveGroupSlot::None; SG];
 
@@ -569,8 +573,13 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
                     continue;
                 }
                 Some(Opcode::Match) => {
-                    // set a condition breaking source_idx to break the outter while loop.
-                    break 'outer;
+                    matches += 1;
+                    if matches == max_matches {
+                        // set a condition breaking break the outer while loop.
+                        break 'outer;
+                    } else {
+                        continue;
+                    }
                 }
                 None => {
                     break 'outer;
@@ -664,6 +673,37 @@ mod tests {
             let res = run::<1>(&prog.program, input);
             assert_eq!((test_num, expected_res), (test_num, res))
         }
+    }
+
+    #[test]
+    fn should_evaluate_multiple_save_groups_expression() {
+        let (expected_res, prog) = (
+            vec![
+                SaveGroupSlot::complete(0, 0, 2),
+                SaveGroupSlot::complete(1, 1, 3),
+            ],
+            Instructions::new(vec![
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
+                Opcode::Any(InstAny::new(InstIndex::from(2))),
+                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                Opcode::Split(InstSplit::new(InstIndex::from(9), InstIndex::from(4))),
+                Opcode::StartSave(InstStartSave::new(0, InstIndex::from(5))),
+                Opcode::Consume(InstConsume::new('a', InstIndex::from(6))),
+                Opcode::Consume(InstConsume::new('a', InstIndex::from(7))),
+                Opcode::EndSave(InstEndSave::new(0, InstIndex::from(8))),
+                Opcode::Jmp(InstJmp::new(InstIndex::from(13))),
+                Opcode::StartSave(InstStartSave::new(1, InstIndex::from(10))),
+                Opcode::Consume(InstConsume::new('a', InstIndex::from(11))),
+                Opcode::Consume(InstConsume::new('b', InstIndex::from(12))),
+                Opcode::EndSave(InstEndSave::new(1, InstIndex::from(13))),
+                Opcode::Match,
+            ]),
+        );
+
+        let input = "aab";
+
+        let res = run::<2>(&prog.program, input);
+        assert_eq!(expected_res, res)
     }
 
     #[test]
