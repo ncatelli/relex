@@ -691,7 +691,7 @@ mod tests {
                 Opcode::Consume(InstConsume::new('a', InstIndex::from(6))),
                 Opcode::Consume(InstConsume::new('a', InstIndex::from(7))),
                 Opcode::EndSave(InstEndSave::new(0, InstIndex::from(8))),
-                Opcode::Jmp(InstJmp::new(InstIndex::from(13))),
+                Opcode::Match,
                 Opcode::StartSave(InstStartSave::new(1, InstIndex::from(10))),
                 Opcode::Consume(InstConsume::new('a', InstIndex::from(11))),
                 Opcode::Consume(InstConsume::new('b', InstIndex::from(12))),
