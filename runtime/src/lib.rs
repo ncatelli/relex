@@ -318,10 +318,10 @@ pub struct InstSplit {
 
 impl InstSplit {
     #[must_use]
-    pub fn new(next1: InstIndex, next2: InstIndex) -> Self {
+    pub fn new(x: InstIndex, y: InstIndex) -> Self {
         Self {
-            x_branch: next1,
-            y_branch: next2,
+            x_branch: x,
+            y_branch: y,
         }
     }
 }
