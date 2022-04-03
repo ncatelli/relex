@@ -201,7 +201,7 @@ impl std::ops::Add<usize> for InstIndex {
     type Output = Self;
 
     fn add(self, rhs: usize) -> Self::Output {
-        let new_ptr = self.as_usize() + rhs;
+        let new_ptr = self.0 + rhs;
 
         InstIndex::from(new_ptr)
     }
@@ -211,8 +211,7 @@ impl std::ops::Add<Self> for InstIndex {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let (lhs, rhs) = (self.as_usize(), rhs.as_usize());
-        let new_ptr = lhs + rhs;
+        let new_ptr = self.0 + rhs.0;
 
         InstIndex::from(new_ptr)
     }
