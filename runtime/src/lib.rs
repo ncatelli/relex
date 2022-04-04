@@ -201,7 +201,7 @@ impl std::ops::Add<usize> for InstIndex {
     type Output = Self;
 
     fn add(self, rhs: usize) -> Self::Output {
-        let new_ptr = self.as_usize() + rhs;
+        let new_ptr = self.0 + rhs;
 
         InstIndex::from(new_ptr)
     }
@@ -211,8 +211,7 @@ impl std::ops::Add<Self> for InstIndex {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        let (lhs, rhs) = (self.as_usize(), rhs.as_usize());
-        let new_ptr = lhs + rhs;
+        let new_ptr = self.0 + rhs.0;
 
         InstIndex::from(new_ptr)
     }
@@ -239,7 +238,7 @@ impl Display for Instruction {
 
 #[derive(Debug)]
 pub enum Opcode {
-    Any(InstAny),
+    Any,
     Consume(InstConsume),
     Split(InstSplit),
     Jmp(InstJmp),
@@ -254,7 +253,7 @@ impl Display for Opcode {
             Opcode::Match => std::fmt::Display::fmt(&InstMatch, f),
             Opcode::Consume(i) => std::fmt::Display::fmt(&i, f),
             Opcode::Split(i) => std::fmt::Display::fmt(&i, f),
-            Opcode::Any(i) => std::fmt::Display::fmt(&i, f),
+            Opcode::Any => std::fmt::Display::fmt(&InstAny::new(), f),
             Opcode::Jmp(i) => std::fmt::Display::fmt(&i, f),
             Opcode::StartSave(i) => std::fmt::Display::fmt(&i, f),
             Opcode::EndSave(i) => std::fmt::Display::fmt(&i, f),
@@ -272,56 +271,57 @@ impl Display for InstMatch {
 }
 
 #[derive(Debug)]
-pub struct InstAny {
-    next: InstIndex,
-}
+pub struct InstAny;
 
 impl InstAny {
-    pub fn new(next: InstIndex) -> Self {
-        Self { next }
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for InstAny {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl Display for InstAny {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Any: ({:04})", self.next.as_usize())
+        write!(f, "Any")
     }
 }
 
 #[derive(Debug)]
 pub struct InstConsume {
     value: char,
-    next: InstIndex,
 }
 
 impl InstConsume {
     #[must_use]
-    pub fn new(value: char, next: InstIndex) -> Self {
-        Self { value, next }
+    pub fn new(value: char) -> Self {
+        Self { value }
     }
 }
 
 impl Display for InstConsume {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Consume: {:?}, ({:04})",
-            self.value,
-            self.next.as_usize()
-        )
+        write!(f, "Consume: {:?}", self.value)
     }
 }
 
 #[derive(Debug)]
 pub struct InstSplit {
-    next1: InstIndex,
-    next2: InstIndex,
+    x_branch: InstIndex,
+    y_branch: InstIndex,
 }
 
 impl InstSplit {
     #[must_use]
-    pub fn new(next1: InstIndex, next2: InstIndex) -> Self {
-        Self { next1, next2 }
+    pub fn new(x: InstIndex, y: InstIndex) -> Self {
+        Self {
+            x_branch: x,
+            y_branch: y,
+        }
     }
 }
 
@@ -330,8 +330,8 @@ impl Display for InstSplit {
         write!(
             f,
             "Split: ({:04}), ({:04})",
-            self.next1.as_usize(),
-            self.next2.as_usize()
+            self.x_branch.as_usize(),
+            self.y_branch.as_usize()
         )
     }
 }
@@ -356,48 +356,36 @@ impl Display for InstJmp {
 #[derive(Debug)]
 pub struct InstStartSave {
     slot_id: usize,
-    next: InstIndex,
 }
 
 impl InstStartSave {
     #[must_use]
-    pub fn new(slot_id: usize, next: InstIndex) -> Self {
-        Self { slot_id, next }
+    pub fn new(slot_id: usize) -> Self {
+        Self { slot_id }
     }
 }
 
 impl Display for InstStartSave {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "StartSave[{:04}]: ({:04})",
-            self.slot_id,
-            self.next.as_usize()
-        )
+        write!(f, "StartSave[{:04}]", self.slot_id,)
     }
 }
 
 #[derive(Debug)]
 pub struct InstEndSave {
     slot_id: usize,
-    next: InstIndex,
 }
 
 impl InstEndSave {
     #[must_use]
-    pub fn new(slot_id: usize, next: InstIndex) -> Self {
-        Self { slot_id, next }
+    pub fn new(slot_id: usize) -> Self {
+        Self { slot_id }
     }
 }
 
 impl Display for InstEndSave {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "EndSave[{:04}]: ({:04})",
-            self.slot_id,
-            self.next.as_usize()
-        )
+        write!(f, "EndSave[{:04}]", self.slot_id,)
     }
 }
 
@@ -413,14 +401,16 @@ fn add_thread(
     sp: usize,
     input: &str,
 ) -> Threads {
+    let inst_idx = t.inst;
+    let default_next_inst_idx = inst_idx + 1;
+
     // Don't visit states we've already added.
-    let pc = t.inst;
-    let ip = program.get(pc.as_usize());
-    let inst = match ip {
-        // if the tread is already defined return
+    let inst = match program.get(inst_idx.as_usize()) {
+        // if the thread is already defined, return.
         Some(inst) if thread_list.gen.contains(&inst.id) => return thread_list,
-        // if it's the end of the program without a match instruction return.
+        // if it's the end of the program without a match instruction, return.
         None => return thread_list,
+        // Otherwise add the new thread.
         Some(inst) => {
             thread_list.gen.insert(inst.id);
             inst
@@ -429,9 +419,9 @@ fn add_thread(
 
     let opcode = &inst.opcode;
     match opcode {
-        Opcode::Split(InstSplit { next1, next2 }) => {
-            let x = *next1;
-            let y = *next2;
+        Opcode::Split(InstSplit { x_branch, y_branch }) => {
+            let x = *x_branch;
+            let y = *y_branch;
             thread_list = add_thread(
                 program,
                 save_groups,
@@ -458,19 +448,19 @@ fn add_thread(
             sp,
             input,
         ),
-        Opcode::StartSave(InstStartSave { slot_id, next }) => {
+        Opcode::StartSave(InstStartSave { slot_id }) => {
             let save_group = SaveGroup::Allocated { slot_id: *slot_id };
 
             add_thread(
                 program,
                 save_groups,
                 thread_list,
-                Thread::new(save_group, *next),
+                Thread::new(save_group, default_next_inst_idx),
                 sp,
                 input,
             )
         }
-        Opcode::EndSave(InstEndSave { slot_id, next }) => {
+        Opcode::EndSave(InstEndSave { slot_id }) => {
             let closed_save = match t.save_group {
                 SaveGroup::Open { slot_id, start } => SaveGroup::Complete {
                     slot_id,
@@ -478,15 +468,17 @@ fn add_thread(
                     end: sp,
                 },
 
+                // this state should never be reached.
                 _ => panic!("attempting to close an unopened save."),
             };
+            let next = inst_idx + 1;
 
             save_groups[*slot_id] = SaveGroupSlot::from(closed_save);
             add_thread(
                 program,
                 save_groups,
                 thread_list,
-                Thread::new(closed_save, *next),
+                Thread::new(closed_save, next),
                 sp,
                 input,
             )
@@ -528,13 +520,14 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
             let save_group = thread.save_group;
             let next_char = get_at(input, input_idx);
             let inst_idx = thread.inst;
+            let default_next_inst_idx = inst_idx + 1;
             let opcode = program.get(inst_idx.as_usize()).map(|i| &i.opcode);
 
             match opcode {
-                Some(Opcode::Any(_)) if next_char.is_none() => {
+                Some(Opcode::Any) if next_char.is_none() => {
                     break;
                 }
-                Some(Opcode::Any(InstAny { next })) => {
+                Some(Opcode::Any) => {
                     let thread_local_save_group =
                         if let SaveGroup::Allocated { slot_id } = save_group {
                             SaveGroup::open(slot_id, input_idx)
@@ -546,12 +539,12 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
                         program,
                         &mut sub,
                         next_thread_list,
-                        Thread::new(thread_local_save_group, *next),
+                        Thread::new(thread_local_save_group, default_next_inst_idx),
                         input_idx + 1,
                         input,
                     );
                 }
-                Some(Opcode::Consume(InstConsume { value, next })) if Some(*value) == next_char => {
+                Some(Opcode::Consume(InstConsume { value })) if Some(*value) == next_char => {
                     let thread_local_save_group =
                         if let SaveGroup::Allocated { slot_id } = save_group {
                             SaveGroup::open(slot_id, input_idx)
@@ -563,7 +556,7 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
                         program,
                         &mut sub,
                         next_thread_list,
-                        Thread::new(thread_local_save_group, *next),
+                        Thread::new(thread_local_save_group, default_next_inst_idx),
                         input_idx + 1,
                         input,
                     );
@@ -611,18 +604,18 @@ mod tests {
             (
                 vec![SaveGroupSlot::complete(0, 0, 1)],
                 Instructions::new(vec![
-                    Opcode::StartSave(InstStartSave::new(0, InstIndex::from(1))),
-                    Opcode::Consume(InstConsume::new('a', InstIndex::from(2))),
-                    Opcode::EndSave(InstEndSave::new(0, InstIndex::from(3))),
+                    Opcode::StartSave(InstStartSave::new(0)),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::EndSave(InstEndSave::new(0)),
                     Opcode::Match,
                 ]),
             ),
             (
                 vec![SaveGroupSlot::None],
                 Instructions::new(vec![
-                    Opcode::StartSave(InstStartSave::new(0, InstIndex::from(1))),
-                    Opcode::Consume(InstConsume::new('b', InstIndex::from(2))),
-                    Opcode::EndSave(InstEndSave::new(0, InstIndex::from(3))),
+                    Opcode::StartSave(InstStartSave::new(0)),
+                    Opcode::Consume(InstConsume::new('b')),
+                    Opcode::EndSave(InstEndSave::new(0)),
                     Opcode::Match,
                 ]),
             ),
@@ -643,12 +636,12 @@ mod tests {
                 vec![SaveGroupSlot::complete(0, 0, 2)],
                 Instructions::new(vec![
                     Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
-                    Opcode::Any(InstAny::new(InstIndex::from(2))),
+                    Opcode::Any,
                     Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
-                    Opcode::StartSave(InstStartSave::new(0, InstIndex::from(4))),
-                    Opcode::Consume(InstConsume::new('a', InstIndex::from(5))),
-                    Opcode::Consume(InstConsume::new('a', InstIndex::from(6))),
-                    Opcode::EndSave(InstEndSave::new(0, InstIndex::from(7))),
+                    Opcode::StartSave(InstStartSave::new(0)),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::EndSave(InstEndSave::new(0)),
                     Opcode::Match,
                 ]),
             ),
@@ -656,12 +649,12 @@ mod tests {
                 vec![SaveGroupSlot::complete(0, 1, 3)],
                 Instructions::new(vec![
                     Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
-                    Opcode::Any(InstAny::new(InstIndex::from(2))),
+                    Opcode::Any,
                     Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
-                    Opcode::StartSave(InstStartSave::new(0, InstIndex::from(4))),
-                    Opcode::Consume(InstConsume::new('a', InstIndex::from(5))),
-                    Opcode::Consume(InstConsume::new('b', InstIndex::from(6))),
-                    Opcode::EndSave(InstEndSave::new(0, InstIndex::from(7))),
+                    Opcode::StartSave(InstStartSave::new(0)),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Consume(InstConsume::new('b')),
+                    Opcode::EndSave(InstEndSave::new(0)),
                     Opcode::Match,
                 ]),
             ),
@@ -684,18 +677,18 @@ mod tests {
             ],
             Instructions::new(vec![
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
-                Opcode::Any(InstAny::new(InstIndex::from(2))),
+                Opcode::Any,
                 Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
                 Opcode::Split(InstSplit::new(InstIndex::from(9), InstIndex::from(4))),
-                Opcode::StartSave(InstStartSave::new(0, InstIndex::from(5))),
-                Opcode::Consume(InstConsume::new('a', InstIndex::from(6))),
-                Opcode::Consume(InstConsume::new('a', InstIndex::from(7))),
-                Opcode::EndSave(InstEndSave::new(0, InstIndex::from(8))),
+                Opcode::StartSave(InstStartSave::new(0)),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::EndSave(InstEndSave::new(0)),
                 Opcode::Match,
-                Opcode::StartSave(InstStartSave::new(1, InstIndex::from(10))),
-                Opcode::Consume(InstConsume::new('a', InstIndex::from(11))),
-                Opcode::Consume(InstConsume::new('b', InstIndex::from(12))),
-                Opcode::EndSave(InstEndSave::new(1, InstIndex::from(13))),
+                Opcode::StartSave(InstStartSave::new(1)),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Consume(InstConsume::new('b')),
+                Opcode::EndSave(InstEndSave::new(1)),
                 Opcode::Match,
             ]),
         );
@@ -709,14 +702,14 @@ mod tests {
     #[test]
     fn should_print_test_instructions() {
         let prog = Instructions::new(vec![
-            Opcode::Consume(InstConsume::new('a', InstIndex::from(1))),
-            Opcode::Consume(InstConsume::new('b', InstIndex::from(2))),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Consume(InstConsume::new('b')),
             Opcode::Match,
         ]);
 
         assert_eq!(
-            "0000: Consume: 'a', (0001)
-0001: Consume: 'b', (0002)
+            "0000: Consume: 'a'
+0001: Consume: 'b'
 0002: Match: (END)\n",
             prog.to_string()
         )

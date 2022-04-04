@@ -1,7 +1,14 @@
 
 name: Bench
 
-on: [push]
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  release:
+    types:
+      - created
 
 jobs:
   build_and_test:
@@ -18,7 +25,7 @@ jobs:
       - uses: actions/checkout@v2
         with:
           clean: false
-      - name: measure banchmarks on branch
+      - name: measure benchmarks on branch
         uses: actions-rs/cargo@v1
         with:
           command: bench
