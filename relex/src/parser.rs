@@ -59,7 +59,7 @@ fn subexpression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::SubE
 
 fn subexpression_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::SubExpressionItem>
 {
-    parcel::or(group().map(|g| g).map(Into::into), || {
+    parcel::or(group().map(Into::into), || {
         parcel::or(backreference().map(Into::into), || {
             parcel::or(anchor().map(Into::into), || r#match().map(Into::into))
         })
