@@ -9,3 +9,4 @@ workspace = ".."
 
 [dependencies]
 parcel = { git = "https://github.com/ncatelli/parcel", tag = "v2.0.1" }
+relex-runtime = { path = "../runtime/" }
