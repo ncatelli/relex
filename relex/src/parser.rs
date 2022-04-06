@@ -483,7 +483,6 @@ mod tests {
 
         for input in inputs {
             let parse_result = parse(&input);
-            println!("{:#?}", &parse_result);
             assert!(parse_result.is_ok())
         }
     }
