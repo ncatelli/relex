@@ -64,4 +64,19 @@ fn match_item(m: ast::Match) -> Result<Opcodes, String> {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_compile_single_character_match() {
+        use ast::*;
+        let regex_ast = Regex::Unanchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+            }),
+        ])]));
+
+        let res = compile(regex_ast);
+        assert!(res.is_ok())
+    }
+}
