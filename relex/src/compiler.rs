@@ -90,8 +90,6 @@ mod tests {
             }),
         ])]));
 
-        let res = compile(regex_ast);
-
         assert_eq!(
             Ok(Instructions::new(vec![
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
@@ -101,7 +99,7 @@ mod tests {
                 Opcode::Consume(InstConsume::new('b')),
                 Opcode::Match,
             ])),
-            res
+            compile(regex_ast)
         )
     }
 
@@ -119,15 +117,13 @@ mod tests {
             }),
         ])]));
 
-        let res = compile(regex_ast);
-
         assert_eq!(
             Ok(Instructions::new(vec![
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Consume(InstConsume::new('b')),
                 Opcode::Match,
             ])),
-            res
+            compile(regex_ast)
         )
     }
 }
