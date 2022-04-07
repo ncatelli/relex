@@ -3,18 +3,26 @@ use relex_runtime::*;
 
 type Opcodes = Vec<Opcode>;
 
-pub fn compile(regex_ast: ast::Regex) -> Result<Opcodes, String> {
-    match regex_ast {
-        ast::Regex::StartOfStringAnchored(expr) => expression(expr),
-        ast::Regex::Unanchored(expr) => {
-            let prefix = [
-                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
-                Opcode::Any,
-                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
-            ];
+pub fn compile(regex_ast: ast::Regex) -> Result<Instructions, String> {
+    let suffix = [Opcode::Match];
 
-            expression(expr).map(|expr| prefix.into_iter().chain(expr.into_iter()).collect())
-        }
+    match regex_ast {
+        ast::Regex::StartOfStringAnchored(expr) => expression(expr).map(Instructions::new),
+        ast::Regex::Unanchored(expr) => expression(expr)
+            .map(|expr| {
+                let prefix = [
+                    Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
+                    Opcode::Any,
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                ];
+
+                prefix
+                    .into_iter()
+                    .chain(expr.into_iter())
+                    .chain(suffix.into_iter())
+                    .collect()
+            })
+            .map(Instructions::new),
     }
 }
 
@@ -76,7 +84,6 @@ mod tests {
             }),
         ])]));
 
-        let res = compile(regex_ast);
-        assert!(res.is_ok())
+        assert!(compile(regex_ast).is_ok())
     }
 }
