@@ -3,6 +3,7 @@ use parcel::prelude::v1::*;
 
 use super::ast;
 
+#[derive(PartialEq)]
 pub enum ParseErr {
     InvalidRegex,
     Undefined(String),
@@ -450,6 +451,16 @@ fn any_character_escaped<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
             remainder: &input[1..],
             inner: next,
         }),
+        // handle for end of input
+        None => match input.get(0..1) {
+            // discard the lookahead.
+            Some(&[(next_pos, next)]) => Ok(MatchStatus::Match {
+                span: next_pos..next_pos + 1,
+                remainder: &input[1..],
+                inner: next,
+            }),
+            _ => Ok(MatchStatus::NoMatch(input)),
+        },
         _ => Ok(MatchStatus::NoMatch(input)),
     }
 }
@@ -471,7 +482,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn should_parse_minimal_expression() {
+    fn should_parse_minimal_expression_with_no_errors() {
         let inputs = vec![
             // a basic input string
             "the red pill",
@@ -485,5 +496,23 @@ mod tests {
             let parse_result = parse(&input);
             assert!(parse_result.is_ok())
         }
+    }
+
+    #[test]
+    fn should_parse_compound_match() {
+        use ast::*;
+        let input = "ab".chars().enumerate().collect::<Vec<(usize, char)>>();
+
+        assert_eq!(
+            Ok(Regex::Unanchored(Expression(vec![SubExpression(vec![
+                SubExpressionItem::Match(Match::WithoutQuantifier {
+                    item: MatchItem::MatchCharacter(MatchCharacter(Char('a')))
+                }),
+                SubExpressionItem::Match(Match::WithoutQuantifier {
+                    item: MatchItem::MatchCharacter(MatchCharacter(Char('b')))
+                }),
+            ])]))),
+            parse(&input)
+        )
     }
 }

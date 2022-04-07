@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Regex {
     StartOfStringAnchored(Expression),
     Unanchored(Expression),
@@ -6,10 +6,10 @@ pub enum Regex {
 
 // Expression
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Expression(pub Vec<SubExpression>);
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct SubExpression(pub Vec<SubExpressionItem>);
 
 impl From<SubExpressionItem> for SubExpression {
@@ -18,7 +18,7 @@ impl From<SubExpressionItem> for SubExpression {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum SubExpressionItem {
     Match(Match),
     Group(Group),
@@ -53,7 +53,7 @@ impl From<Backreference> for SubExpressionItem {
 }
 
 // Group
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Group {
     Capturing {
         expression: Expression,
@@ -77,7 +77,7 @@ pub struct GroupNonCapturingModifier;
 
 // Matchers
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Match {
     WithQuantifier {
         item: MatchItem,
@@ -91,7 +91,7 @@ pub enum Match {
 impl IsSubExpressionItem for Match {}
 
 #[allow(clippy::enum_variant_names)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum MatchItem {
     MatchAnyCharacter,
     MatchCharacterClass(MatchCharacterClass),
@@ -122,7 +122,7 @@ pub struct MatchAnyCharacter;
 impl IsMatchItem for MatchAnyCharacter {}
 
 #[allow(clippy::enum_variant_names)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum MatchCharacterClass {
     CharacterGroup(CharacterGroup),
     CharacterClass(CharacterClass),
@@ -151,13 +151,13 @@ impl From<CharacterClassFromUnicodeCategory> for MatchCharacterClass {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct MatchCharacter(pub Char);
 impl IsMatchItem for MatchCharacter {}
 
 // Character Classes
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum CharacterGroup {
     NegatedItems(Vec<CharacterGroupItem>),
     Items(Vec<CharacterGroupItem>),
@@ -168,7 +168,7 @@ impl IsMatchCharacterClass for CharacterGroup {}
 pub struct CharacterGroupNegativeModifier;
 
 #[allow(clippy::enum_variant_names)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum CharacterGroupItem {
     CharacterClass(CharacterClass),
     CharacterClassFromUnicodeCategory(UnicodeCategoryName),
@@ -212,7 +212,7 @@ impl From<Char> for CharacterGroupItem {
 }
 
 #[allow(clippy::enum_variant_names)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum CharacterClass {
     AnyWord,
     AnyWordInverted,
@@ -261,12 +261,12 @@ impl IsCharacterClass for CharacterClassAnyDecimalDigit {}
 pub struct CharacterClassAnyDecimalDigitInverted;
 impl IsCharacterClass for CharacterClassAnyDecimalDigitInverted {}
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct CharacterClassFromUnicodeCategory(pub UnicodeCategoryName);
 impl IsMatchCharacterClass for CharacterClassFromUnicodeCategory {}
 impl IsCharacterGroupItem for CharacterClassFromUnicodeCategory {}
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct UnicodeCategoryName(pub Letters);
 
 pub struct CharacterRange {
@@ -287,7 +287,7 @@ impl IsCharacterGroupItem for CharacterRange {}
 
 // Quantifiers
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Quantifier {
     Eager(QuantifierType),
     Lazy(QuantifierType),
@@ -298,7 +298,7 @@ pub enum Quantifier {
 pub trait IsQuantifierType: Into<QuantifierType> {}
 
 /// Represents all variants of quantifier types
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum QuantifierType {
     MatchExactRange(Integer),
     MatchAtleastRange(Integer),
@@ -415,7 +415,7 @@ pub struct StartOfStringAnchor;
 
 pub trait IsAnchor: Into<Anchor> {}
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Anchor {
     WordBoundary,
     NonWordBoundary,
@@ -500,7 +500,7 @@ impl IsAnchor for AnchorEndOfString {}
 
 // Terminals
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[repr(transparent)]
 pub struct Integer(pub isize);
 
@@ -516,7 +516,7 @@ impl From<Integer> for isize {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[repr(transparent)]
 pub struct Letters(pub Vec<char>);
 
@@ -532,7 +532,7 @@ impl AsRef<[char]> for Letters {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[repr(transparent)]
 pub struct Char(pub char);
 impl IsCharacterGroupItem for Char {}
