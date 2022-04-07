@@ -82,6 +82,9 @@ mod tests {
             SubExpressionItem::Match(Match::WithoutQuantifier {
                 item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
             }),
+            SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchCharacter(MatchCharacter(Char('b'))),
+            }),
         ])]));
 
         assert!(compile(regex_ast).is_ok())
