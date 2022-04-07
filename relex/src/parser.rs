@@ -515,4 +515,24 @@ mod tests {
             parse(&input)
         )
     }
+
+    #[test]
+    fn should_parse_anchored_match() {
+        use ast::*;
+        let input = "^ab".chars().enumerate().collect::<Vec<(usize, char)>>();
+
+        assert_eq!(
+            Ok(Regex::StartOfStringAnchored(Expression(vec![
+                SubExpression(vec![
+                    SubExpressionItem::Match(Match::WithoutQuantifier {
+                        item: MatchItem::MatchCharacter(MatchCharacter(Char('a')))
+                    }),
+                    SubExpressionItem::Match(Match::WithoutQuantifier {
+                        item: MatchItem::MatchCharacter(MatchCharacter(Char('b')))
+                    }),
+                ])
+            ]))),
+            parse(&input)
+        )
+    }
 }

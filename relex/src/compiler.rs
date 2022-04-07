@@ -7,23 +7,24 @@ pub fn compile(regex_ast: ast::Regex) -> Result<Instructions, String> {
     let suffix = [Opcode::Match];
 
     match regex_ast {
-        ast::Regex::StartOfStringAnchored(expr) => expression(expr).map(Instructions::new),
-        ast::Regex::Unanchored(expr) => expression(expr)
-            .map(|expr| {
-                let prefix = [
-                    Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
-                    Opcode::Any,
-                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
-                ];
+        ast::Regex::StartOfStringAnchored(expr) => {
+            expression(expr).map(|expr| expr.into_iter().chain(suffix.into_iter()).collect())
+        }
+        ast::Regex::Unanchored(expr) => expression(expr).map(|expr| {
+            let prefix = [
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
+                Opcode::Any,
+                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+            ];
 
-                prefix
-                    .into_iter()
-                    .chain(expr.into_iter())
-                    .chain(suffix.into_iter())
-                    .collect()
-            })
-            .map(Instructions::new),
+            prefix
+                .into_iter()
+                .chain(expr.into_iter())
+                .chain(suffix.into_iter())
+                .collect()
+        }),
     }
+    .map(Instructions::new)
 }
 
 fn expression(expr: ast::Expression) -> Result<Opcodes, String> {
@@ -76,8 +77,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn should_compile_single_character_match() {
+    fn should_compile_unanchored_character_match() {
         use ast::*;
+        use relex_runtime::*;
+
         let regex_ast = Regex::Unanchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Match(Match::WithoutQuantifier {
                 item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
@@ -87,6 +90,44 @@ mod tests {
             }),
         ])]));
 
-        assert!(compile(regex_ast).is_ok())
+        let res = compile(regex_ast);
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
+                Opcode::Any,
+                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Consume(InstConsume::new('b')),
+                Opcode::Match,
+            ])),
+            res
+        )
+    }
+
+    #[test]
+    fn should_compile_anchored_character_match() {
+        use ast::*;
+        use relex_runtime::*;
+
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+            }),
+            SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchCharacter(MatchCharacter(Char('b'))),
+            }),
+        ])]));
+
+        let res = compile(regex_ast);
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Consume(InstConsume::new('b')),
+                Opcode::Match,
+            ])),
+            res
+        )
     }
 }

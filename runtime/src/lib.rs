@@ -123,6 +123,7 @@ impl Default for Threads {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Instructions {
     program: Vec<Instruction>,
 }
@@ -181,7 +182,7 @@ impl AsRef<[Instruction]> for Instructions {
 }
 
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InstIndex(usize);
 
 impl InstIndex {
@@ -217,7 +218,7 @@ impl std::ops::Add<Self> for InstIndex {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Instruction {
     id: usize,
     opcode: Opcode,
@@ -236,7 +237,7 @@ impl Display for Instruction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Opcode {
     Any,
     Consume(InstConsume),
@@ -261,7 +262,7 @@ impl Display for Opcode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct InstMatch;
 
 impl Display for InstMatch {
@@ -270,7 +271,7 @@ impl Display for InstMatch {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct InstAny;
 
 impl InstAny {
@@ -291,7 +292,7 @@ impl Display for InstAny {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct InstConsume {
     value: char,
 }
@@ -309,7 +310,7 @@ impl Display for InstConsume {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct InstSplit {
     x_branch: InstIndex,
     y_branch: InstIndex,
@@ -336,7 +337,7 @@ impl Display for InstSplit {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct InstJmp {
     next: InstIndex,
 }
@@ -353,7 +354,7 @@ impl Display for InstJmp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct InstStartSave {
     slot_id: usize,
 }
@@ -371,7 +372,7 @@ impl Display for InstStartSave {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct InstEndSave {
     slot_id: usize,
 }
