@@ -535,4 +535,19 @@ mod tests {
             parse(&input)
         )
     }
+
+    #[test]
+    fn should_parse_any_match() {
+        use ast::*;
+        let input = ".".chars().enumerate().collect::<Vec<(usize, char)>>();
+
+        assert_eq!(
+            Ok(Regex::Unanchored(Expression(vec![SubExpression(vec![
+                SubExpressionItem::Match(Match::WithoutQuantifier {
+                    item: MatchItem::MatchAnyCharacter
+                }),
+            ])]))),
+            parse(&input)
+        )
+    }
 }

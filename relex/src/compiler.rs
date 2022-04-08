@@ -46,7 +46,7 @@ fn subexpression(subexpr: ast::SubExpression) -> Result<Opcodes, String> {
             ast::SubExpressionItem::Match(m) => match_item(m),
             ast::SubExpressionItem::Group(_) => todo!(),
             ast::SubExpressionItem::Anchor(_) => todo!(),
-            ast::SubExpressionItem::Backreference(_) => todo!(),
+            ast::SubExpressionItem::Backreference(_) => unimplemented!(),
         })
         .collect::<Result<Vec<Opcodes>, _>>()
         .map(|opcodes| opcodes.into_iter().flatten().collect())
@@ -62,7 +62,7 @@ fn match_item(m: ast::Match) -> Result<Opcodes, String> {
         } => todo!(),
         Match::WithoutQuantifier {
             item: MatchItem::MatchAnyCharacter,
-        } => todo!(),
+        } => Ok(vec![Opcode::Any]),
         Match::WithoutQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
         } => Ok(vec![Opcode::Consume(InstConsume::new(c))]),
@@ -81,6 +81,7 @@ mod tests {
         use ast::*;
         use relex_runtime::*;
 
+        // equivalent to `ab`
         let regex_ast = Regex::Unanchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Match(Match::WithoutQuantifier {
                 item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
@@ -108,6 +109,7 @@ mod tests {
         use ast::*;
         use relex_runtime::*;
 
+        // equivalent to `^ab`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Match(Match::WithoutQuantifier {
                 item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
@@ -121,6 +123,30 @@ mod tests {
             Ok(Instructions::new(vec![
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Consume(InstConsume::new('b')),
+                Opcode::Match,
+            ])),
+            compile(regex_ast)
+        )
+    }
+
+    #[test]
+    fn should_compile_any_character_match() {
+        use ast::*;
+        use relex_runtime::*;
+
+        // equivalent to `.`
+        let regex_ast = Regex::Unanchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchAnyCharacter,
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
+                Opcode::Any,
+                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                Opcode::Any,
                 Opcode::Match,
             ])),
             compile(regex_ast)
