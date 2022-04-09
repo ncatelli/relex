@@ -3,6 +3,7 @@ use parcel::prelude::v1::*;
 
 use super::ast;
 
+#[derive(PartialEq)]
 pub enum ParseErr {
     InvalidRegex,
     Undefined(String),
@@ -59,7 +60,7 @@ fn subexpression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::SubE
 
 fn subexpression_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::SubExpressionItem>
 {
-    parcel::or(group().map(|g| g).map(Into::into), || {
+    parcel::or(group().map(Into::into), || {
         parcel::or(backreference().map(Into::into), || {
             parcel::or(anchor().map(Into::into), || r#match().map(Into::into))
         })
@@ -450,6 +451,16 @@ fn any_character_escaped<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
             remainder: &input[1..],
             inner: next,
         }),
+        // handle for end of input
+        None => match input.get(0..1) {
+            // discard the lookahead.
+            Some(&[(next_pos, next)]) => Ok(MatchStatus::Match {
+                span: next_pos..next_pos + 1,
+                remainder: &input[1..],
+                inner: next,
+            }),
+            _ => Ok(MatchStatus::NoMatch(input)),
+        },
         _ => Ok(MatchStatus::NoMatch(input)),
     }
 }
@@ -471,7 +482,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn should_parse_minimal_expression() {
+    fn should_parse_minimal_expression_with_no_errors() {
         let inputs = vec![
             // a basic input string
             "the red pill",
@@ -483,8 +494,60 @@ mod tests {
 
         for input in inputs {
             let parse_result = parse(&input);
-            println!("{:#?}", &parse_result);
             assert!(parse_result.is_ok())
         }
+    }
+
+    #[test]
+    fn should_parse_compound_match() {
+        use ast::*;
+        let input = "ab".chars().enumerate().collect::<Vec<(usize, char)>>();
+
+        assert_eq!(
+            Ok(Regex::Unanchored(Expression(vec![SubExpression(vec![
+                SubExpressionItem::Match(Match::WithoutQuantifier {
+                    item: MatchItem::MatchCharacter(MatchCharacter(Char('a')))
+                }),
+                SubExpressionItem::Match(Match::WithoutQuantifier {
+                    item: MatchItem::MatchCharacter(MatchCharacter(Char('b')))
+                }),
+            ])]))),
+            parse(&input)
+        )
+    }
+
+    #[test]
+    fn should_parse_anchored_match() {
+        use ast::*;
+        let input = "^ab".chars().enumerate().collect::<Vec<(usize, char)>>();
+
+        assert_eq!(
+            Ok(Regex::StartOfStringAnchored(Expression(vec![
+                SubExpression(vec![
+                    SubExpressionItem::Match(Match::WithoutQuantifier {
+                        item: MatchItem::MatchCharacter(MatchCharacter(Char('a')))
+                    }),
+                    SubExpressionItem::Match(Match::WithoutQuantifier {
+                        item: MatchItem::MatchCharacter(MatchCharacter(Char('b')))
+                    }),
+                ])
+            ]))),
+            parse(&input)
+        )
+    }
+
+    #[test]
+    fn should_parse_any_match() {
+        use ast::*;
+        let input = ".".chars().enumerate().collect::<Vec<(usize, char)>>();
+
+        assert_eq!(
+            Ok(Regex::Unanchored(Expression(vec![SubExpression(vec![
+                SubExpressionItem::Match(Match::WithoutQuantifier {
+                    item: MatchItem::MatchAnyCharacter
+                }),
+            ])]))),
+            parse(&input)
+        )
     }
 }
