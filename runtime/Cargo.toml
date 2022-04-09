@@ -9,8 +9,8 @@ workspace = ".."
 criterion = "0.3"
 
 [[bench]]
-name = "linear_scaling_of_input"
-path = "benches/linear.rs"
+name = "exponential_scaling_of_input"
+path = "benches/exponential.rs"
 harness = false
 
 [dependencies]

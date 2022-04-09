@@ -18,7 +18,7 @@ fn pad_input_to_length_with(suffix: &str, pad_str: &str, len: usize) -> String {
 }
 
 pub fn linear_input_size_comparison(c: &mut Criterion) {
-    let mut group = c.benchmark_group("linear input length comparison");
+    let mut group = c.benchmark_group("exponential input length comparison");
     let input = "ab";
     let pad = "xy";
 
