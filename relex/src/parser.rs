@@ -537,6 +537,39 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_eager_repetition_quantifiers() {
+        use ast::*;
+
+        let inputs = vec![
+            (QuantifierType::OneOrMore, "^.+"),
+            (QuantifierType::ZeroOrMore, "^.*"),
+            (QuantifierType::MatchExactRange(Integer(2)), "^.{2}"),
+            (QuantifierType::MatchAtleastRange(Integer(2)), "^.{2,}"),
+            (
+                QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(2),
+                    upper_bound: Integer(4),
+                },
+                "^.{2,4}",
+            ),
+        ];
+
+        for (expected_quantifier, input) in inputs {
+            let input = input.chars().enumerate().collect::<Vec<(usize, char)>>();
+
+            assert_eq!(
+                Ok(Regex::StartOfStringAnchored(Expression(vec![
+                    SubExpression(vec![SubExpressionItem::Match(Match::WithQuantifier {
+                        item: MatchItem::MatchAnyCharacter,
+                        quantifier: Quantifier::Eager(expected_quantifier),
+                    })])
+                ]))),
+                parse(&input)
+            )
+        }
+    }
+
+    #[test]
     fn should_parse_any_match() {
         use ast::*;
         let input = ".".chars().enumerate().collect::<Vec<(usize, char)>>();
