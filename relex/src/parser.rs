@@ -567,6 +567,23 @@ mod tests {
                 parse(&input)
             )
         }
+
+        // test single character matches
+        let inputs = vec![(QuantifierType::MatchExactRange(Integer(2)), "^a{2}")];
+
+        for (expected_quantifier, input) in inputs {
+            let input = input.chars().enumerate().collect::<Vec<(usize, char)>>();
+
+            assert_eq!(
+                Ok(Regex::StartOfStringAnchored(Expression(vec![
+                    SubExpression(vec![SubExpressionItem::Match(Match::WithQuantifier {
+                        item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                        quantifier: Quantifier::Eager(expected_quantifier),
+                    })])
+                ]))),
+                parse(&input)
+            )
+        }
     }
 
     #[test]

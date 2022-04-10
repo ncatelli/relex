@@ -237,7 +237,7 @@ impl Display for Instruction {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Opcode {
     Any,
     Consume(InstConsume),
@@ -292,7 +292,7 @@ impl Display for InstAny {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InstConsume {
     value: char,
 }
@@ -310,7 +310,7 @@ impl Display for InstConsume {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InstSplit {
     x_branch: InstIndex,
     y_branch: InstIndex,
@@ -337,7 +337,7 @@ impl Display for InstSplit {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InstJmp {
     next: InstIndex,
 }
@@ -354,7 +354,7 @@ impl Display for InstJmp {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InstStartSave {
     slot_id: usize,
 }
@@ -372,7 +372,7 @@ impl Display for InstStartSave {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InstEndSave {
     slot_id: usize,
 }

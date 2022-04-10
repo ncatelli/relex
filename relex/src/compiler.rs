@@ -53,9 +53,17 @@ fn subexpression(subexpr: ast::SubExpression) -> Result<Opcodes, String> {
 }
 
 fn match_item(m: ast::Match) -> Result<Opcodes, String> {
-    use ast::{Char, Match, MatchCharacter, MatchItem};
+    use ast::{Char, Integer, Match, MatchCharacter, MatchItem, Quantifier, QuantifierType};
 
     match m {
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(cnt))),
+        } => Ok(vec![Opcode::Any; cnt as usize]),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(cnt))),
+        } => Ok(vec![Opcode::Consume(InstConsume::new(c)); cnt as usize]),
         Match::WithQuantifier {
             item: _,
             quantifier: _,
@@ -147,6 +155,46 @@ mod tests {
                 Opcode::Any,
                 Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
                 Opcode::Any,
+                Opcode::Match,
+            ])),
+            compile(regex_ast)
+        )
+    }
+
+    #[test]
+    fn should_compile_exact_match_quantified_item() {
+        use ast::*;
+        use relex_runtime::*;
+
+        // equivalent to `^.{2}`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithQuantifier {
+                item: MatchItem::MatchAnyCharacter,
+                quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(2))),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::Any,
+                Opcode::Any,
+                Opcode::Match,
+            ])),
+            compile(regex_ast)
+        );
+
+        // equivalent to `^a{2}`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithQuantifier {
+                item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(2))),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Consume(InstConsume::new('a')),
                 Opcode::Match,
             ])),
             compile(regex_ast)
