@@ -14,7 +14,7 @@ pub fn compile(regex_ast: ast::Regex) -> Result<Instructions, String> {
             let prefix = [
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                 Opcode::Any,
-                Opcode::JmpAbs(InstJmp::new(InstIndex::from(0))),
+                Opcode::JmpAbs(InstJmpAbs::new(InstIndex::from(0))),
             ];
 
             prefix
@@ -103,7 +103,7 @@ mod tests {
             Ok(Instructions::new(vec![
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                 Opcode::Any,
-                Opcode::JmpAbs(InstJmp::new(InstIndex::from(0))),
+                Opcode::JmpAbs(InstJmpAbs::new(InstIndex::from(0))),
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Consume(InstConsume::new('b')),
                 Opcode::Match,
@@ -153,7 +153,7 @@ mod tests {
             Ok(Instructions::new(vec![
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                 Opcode::Any,
-                Opcode::JmpAbs(InstJmp::new(InstIndex::from(0))),
+                Opcode::JmpAbs(InstJmpAbs::new(InstIndex::from(0))),
                 Opcode::Any,
                 Opcode::Match,
             ])),
