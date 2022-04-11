@@ -242,7 +242,7 @@ pub enum Opcode {
     Any,
     Consume(InstConsume),
     Split(InstSplit),
-    Jmp(InstJmp),
+    JmpAbs(InstJmp),
     StartSave(InstStartSave),
     EndSave(InstEndSave),
     Match,
@@ -255,7 +255,7 @@ impl Display for Opcode {
             Opcode::Consume(i) => std::fmt::Display::fmt(&i, f),
             Opcode::Split(i) => std::fmt::Display::fmt(&i, f),
             Opcode::Any => std::fmt::Display::fmt(&InstAny::new(), f),
-            Opcode::Jmp(i) => std::fmt::Display::fmt(&i, f),
+            Opcode::JmpAbs(i) => std::fmt::Display::fmt(&i, f),
             Opcode::StartSave(i) => std::fmt::Display::fmt(&i, f),
             Opcode::EndSave(i) => std::fmt::Display::fmt(&i, f),
         }
@@ -441,7 +441,7 @@ fn add_thread(
                 input,
             )
         }
-        Opcode::Jmp(InstJmp { next }) => add_thread(
+        Opcode::JmpAbs(InstJmp { next }) => add_thread(
             program,
             save_groups,
             thread_list,
@@ -638,7 +638,7 @@ mod tests {
                 Instructions::new(vec![
                     Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                     Opcode::Any,
-                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                    Opcode::JmpAbs(InstJmp::new(InstIndex::from(0))),
                     Opcode::StartSave(InstStartSave::new(0)),
                     Opcode::Consume(InstConsume::new('a')),
                     Opcode::Consume(InstConsume::new('a')),
@@ -651,7 +651,7 @@ mod tests {
                 Instructions::new(vec![
                     Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                     Opcode::Any,
-                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                    Opcode::JmpAbs(InstJmp::new(InstIndex::from(0))),
                     Opcode::StartSave(InstStartSave::new(0)),
                     Opcode::Consume(InstConsume::new('a')),
                     Opcode::Consume(InstConsume::new('b')),
@@ -679,7 +679,7 @@ mod tests {
             Instructions::new(vec![
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                 Opcode::Any,
-                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                Opcode::JmpAbs(InstJmp::new(InstIndex::from(0))),
                 Opcode::Split(InstSplit::new(InstIndex::from(9), InstIndex::from(4))),
                 Opcode::StartSave(InstStartSave::new(0)),
                 Opcode::Consume(InstConsume::new('a')),
