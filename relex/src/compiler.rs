@@ -14,7 +14,7 @@ pub fn compile(regex_ast: ast::Regex) -> Result<Instructions, String> {
             let prefix = [
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                 Opcode::Any,
-                Opcode::JmpAbs(InstJmpAbs::new(InstIndex::from(0))),
+                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
             ];
 
             prefix
@@ -56,6 +56,7 @@ fn match_item(m: ast::Match) -> Result<Opcodes, String> {
     use ast::{Char, Integer, Match, MatchCharacter, MatchItem, Quantifier, QuantifierType};
 
     match m {
+        // match exact
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
             quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(cnt))),
@@ -64,6 +65,20 @@ fn match_item(m: ast::Match) -> Result<Opcodes, String> {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
             quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(cnt))),
         } => Ok(vec![Opcode::Consume(InstConsume::new(c)); cnt as usize]),
+        // match atleast
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Eager(QuantifierType::MatchAtleastRange(Integer(cnt))),
+        } => {
+            let min_match = vec![Opcode::Any; cnt as usize];
+            let optional = vec![
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
+                Opcode::Any,
+                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+            ];
+            todo!()
+        }
+
         Match::WithQuantifier {
             item: _,
             quantifier: _,
@@ -103,7 +118,7 @@ mod tests {
             Ok(Instructions::new(vec![
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                 Opcode::Any,
-                Opcode::JmpAbs(InstJmpAbs::new(InstIndex::from(0))),
+                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Consume(InstConsume::new('b')),
                 Opcode::Match,
@@ -153,7 +168,7 @@ mod tests {
             Ok(Instructions::new(vec![
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                 Opcode::Any,
-                Opcode::JmpAbs(InstJmpAbs::new(InstIndex::from(0))),
+                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
                 Opcode::Any,
                 Opcode::Match,
             ])),

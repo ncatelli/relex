@@ -242,8 +242,7 @@ pub enum Opcode {
     Any,
     Consume(InstConsume),
     Split(InstSplit),
-    JmpAbs(InstJmpAbs),
-    JmpRel(InstJmpRel),
+    Jmp(InstJmp),
     StartSave(InstStartSave),
     EndSave(InstEndSave),
     Match,
@@ -256,8 +255,7 @@ impl Display for Opcode {
             Opcode::Consume(i) => std::fmt::Display::fmt(&i, f),
             Opcode::Split(i) => std::fmt::Display::fmt(&i, f),
             Opcode::Any => std::fmt::Display::fmt(&InstAny::new(), f),
-            Opcode::JmpAbs(i) => std::fmt::Display::fmt(&i, f),
-            Opcode::JmpRel(i) => std::fmt::Display::fmt(&i, f),
+            Opcode::Jmp(i) => std::fmt::Display::fmt(&i, f),
             Opcode::StartSave(i) => std::fmt::Display::fmt(&i, f),
             Opcode::EndSave(i) => std::fmt::Display::fmt(&i, f),
         }
@@ -340,36 +338,19 @@ impl Display for InstSplit {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct InstJmpAbs {
+pub struct InstJmp {
     next: InstIndex,
 }
 
-impl InstJmpAbs {
+impl InstJmp {
     pub fn new(next: InstIndex) -> Self {
         Self { next }
     }
 }
 
-impl Display for InstJmpAbs {
+impl Display for InstJmp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "JumpAbs: ({:04})", self.next.as_usize())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct InstJmpRel {
-    next: isize,
-}
-
-impl InstJmpRel {
-    pub fn new(next: isize) -> Self {
-        Self { next }
-    }
-}
-
-impl Display for InstJmpRel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "JumpRel: ({:04})", self.next)
     }
 }
 
@@ -460,7 +441,7 @@ fn add_thread(
                 input,
             )
         }
-        Opcode::JmpAbs(InstJmpAbs { next }) => add_thread(
+        Opcode::Jmp(InstJmp { next }) => add_thread(
             program,
             save_groups,
             thread_list,
@@ -657,7 +638,7 @@ mod tests {
                 Instructions::new(vec![
                     Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                     Opcode::Any,
-                    Opcode::JmpAbs(InstJmpAbs::new(InstIndex::from(0))),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
                     Opcode::StartSave(InstStartSave::new(0)),
                     Opcode::Consume(InstConsume::new('a')),
                     Opcode::Consume(InstConsume::new('a')),
@@ -670,7 +651,7 @@ mod tests {
                 Instructions::new(vec![
                     Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                     Opcode::Any,
-                    Opcode::JmpAbs(InstJmpAbs::new(InstIndex::from(0))),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
                     Opcode::StartSave(InstStartSave::new(0)),
                     Opcode::Consume(InstConsume::new('a')),
                     Opcode::Consume(InstConsume::new('b')),
@@ -698,7 +679,7 @@ mod tests {
             Instructions::new(vec![
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                 Opcode::Any,
-                Opcode::JmpAbs(InstJmpAbs::new(InstIndex::from(0))),
+                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
                 Opcode::Split(InstSplit::new(InstIndex::from(9), InstIndex::from(4))),
                 Opcode::StartSave(InstStartSave::new(0)),
                 Opcode::Consume(InstConsume::new('a')),

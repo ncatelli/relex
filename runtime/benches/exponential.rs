@@ -37,7 +37,7 @@ pub fn linear_input_size_comparison(c: &mut Criterion) {
                         let prog = Instructions::new(vec![
                             Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                             Opcode::Any,
-                            Opcode::JmpAbs(InstJmpAbs::new(InstIndex::from(0))),
+                            Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
                             Opcode::StartSave(InstStartSave::new(0)),
                             Opcode::Consume(InstConsume::new('a')),
                             Opcode::Consume(InstConsume::new('b')),
