@@ -544,7 +544,7 @@ mod tests {
             (QuantifierType::OneOrMore, "^.+"),
             (QuantifierType::ZeroOrMore, "^.*"),
             (QuantifierType::MatchExactRange(Integer(2)), "^.{2}"),
-            (QuantifierType::MatchAtleastRange(Integer(2)), "^.{2,}"),
+            (QuantifierType::MatchAtLeastRange(Integer(2)), "^.{2,}"),
             (
                 QuantifierType::MatchBetweenRange {
                     lower_bound: Integer(2),

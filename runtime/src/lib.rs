@@ -701,6 +701,30 @@ mod tests {
     }
 
     #[test]
+    fn should_evaluate_quantifier_expression() {
+        let tests = vec![
+            (vec![SaveGroupSlot::complete(0, 0, 2)], "aab"),
+            // (vec![SaveGroupSlot::complete(0, 0, 3)], "aaab"),
+        ];
+
+        let prog = Instructions::new(vec![
+            Opcode::StartSave(InstStartSave::new(0)),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Split(InstSplit::new(InstIndex::from(6), InstIndex::from(4))),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Jmp(InstJmp::new(InstIndex::from(3))),
+            Opcode::EndSave(InstEndSave::new(0)),
+            Opcode::Match,
+        ]);
+
+        for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
+            let res = run::<1>(&prog.program, input);
+            assert_eq!((case_id, expected_res), (case_id, res));
+        }
+    }
+
+    #[test]
     fn should_print_test_instructions() {
         let prog = Instructions::new(vec![
             Opcode::Consume(InstConsume::new('a')),
