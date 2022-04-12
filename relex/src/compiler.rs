@@ -1,20 +1,69 @@
 use super::ast;
 use relex_runtime::*;
 
+/// A internal representation of the `relex_runtime::Opcode` type, with relative
+/// addressing.
+///
+/// ## Note
+/// This type is meant to exist only internally and should be
+/// refined to the `relex_runtime::Opcode type
+#[derive(Debug, Clone, PartialEq)]
+enum RelativeOpcode {
+    Any,
+    Consume(char),
+    Split(isize, isize),
+    Jmp(isize),
+    StartSave(usize),
+    EndSave(usize),
+    Match,
+}
+
+impl RelativeOpcode {
+    fn to_opcode_with_index_unchecked(&self, idx: usize) -> Opcode {
+        match self {
+            RelativeOpcode::Any => Opcode::Any,
+            RelativeOpcode::Consume(c) => Opcode::Consume(InstConsume::new(*c)),
+            RelativeOpcode::Split(rel_x, rel_y) => {
+                let signed_idx = idx as isize;
+                let x = signed_idx + rel_x;
+                let y = signed_idx + rel_y;
+
+                // this should be made safe.
+                Opcode::Split(InstSplit::new(
+                    InstIndex::from(x as usize),
+                    InstIndex::from(y as usize),
+                ))
+            }
+            RelativeOpcode::Jmp(rel_jmp_to) => {
+                let signed_idx = idx as isize;
+                let jmp_to = signed_idx + rel_jmp_to;
+
+                // this should be made safe.
+                Opcode::Jmp(InstJmp::new(InstIndex::from(jmp_to as usize)))
+            }
+            RelativeOpcode::StartSave(slot) => Opcode::StartSave(InstStartSave::new(*slot)),
+            RelativeOpcode::EndSave(slot) => Opcode::EndSave(InstEndSave::new(*slot)),
+            RelativeOpcode::Match => Opcode::Match,
+        }
+    }
+}
+
 type Opcodes = Vec<Opcode>;
+type RelativeOpcodes = Vec<RelativeOpcode>;
 
 pub fn compile(regex_ast: ast::Regex) -> Result<Instructions, String> {
-    let suffix = [Opcode::Match];
+    let suffix = [RelativeOpcode::Match];
 
-    match regex_ast {
+    let relative_ops: Result<RelativeOpcodes, _> = match regex_ast {
         ast::Regex::StartOfStringAnchored(expr) => {
             expression(expr).map(|expr| expr.into_iter().chain(suffix.into_iter()).collect())
         }
         ast::Regex::Unanchored(expr) => expression(expr).map(|expr| {
+            // match anything
             let prefix = [
-                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
-                Opcode::Any,
-                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                RelativeOpcode::Split(3, 1),
+                RelativeOpcode::Any,
+                RelativeOpcode::Jmp(-2),
             ];
 
             prefix
@@ -23,21 +72,30 @@ pub fn compile(regex_ast: ast::Regex) -> Result<Instructions, String> {
                 .chain(suffix.into_iter())
                 .collect()
         }),
-    }
-    .map(Instructions::new)
+    };
+
+    relative_ops
+        .map(|rel_ops| {
+            rel_ops
+                .into_iter()
+                .enumerate()
+                .map(|(idx, op)| op.to_opcode_with_index_unchecked(idx))
+                .collect::<Opcodes>()
+        })
+        .map(Instructions::new)
 }
 
-fn expression(expr: ast::Expression) -> Result<Opcodes, String> {
+fn expression(expr: ast::Expression) -> Result<RelativeOpcodes, String> {
     let ast::Expression(subexprs) = expr;
 
     subexprs
         .into_iter()
         .map(subexpression)
-        .collect::<Result<Vec<Opcodes>, _>>()
+        .collect::<Result<Vec<_>, _>>()
         .map(|opcodes| opcodes.into_iter().flatten().collect())
 }
 
-fn subexpression(subexpr: ast::SubExpression) -> Result<Opcodes, String> {
+fn subexpression(subexpr: ast::SubExpression) -> Result<RelativeOpcodes, String> {
     let ast::SubExpression(items) = subexpr;
 
     items
@@ -48,11 +106,11 @@ fn subexpression(subexpr: ast::SubExpression) -> Result<Opcodes, String> {
             ast::SubExpressionItem::Anchor(_) => todo!(),
             ast::SubExpressionItem::Backreference(_) => unimplemented!(),
         })
-        .collect::<Result<Vec<Opcodes>, _>>()
+        .collect::<Result<Vec<_>, _>>()
         .map(|opcodes| opcodes.into_iter().flatten().collect())
 }
 
-fn match_item(m: ast::Match) -> Result<Opcodes, String> {
+fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
     use ast::{Char, Integer, Match, MatchCharacter, MatchItem, Quantifier, QuantifierType};
 
     match m {
@@ -60,22 +118,23 @@ fn match_item(m: ast::Match) -> Result<Opcodes, String> {
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
             quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(cnt))),
-        } => Ok(vec![Opcode::Any; cnt as usize]),
+        } => Ok(vec![RelativeOpcode::Any; cnt as usize]),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
             quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(cnt))),
-        } => Ok(vec![Opcode::Consume(InstConsume::new(c)); cnt as usize]),
+        } => Ok(vec![RelativeOpcode::Consume(c); cnt as usize]),
         // match atleast
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
             quantifier: Quantifier::Eager(QuantifierType::MatchAtleastRange(Integer(cnt))),
         } => {
-            let min_match = vec![Opcode::Any; cnt as usize];
-            let optional = vec![
-                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
-                Opcode::Any,
-                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+            let _min_match = vec![RelativeOpcode::Any; cnt as usize];
+            let _optional = vec![
+                RelativeOpcode::Split(3, 1),
+                RelativeOpcode::Any,
+                RelativeOpcode::Jmp(-2),
             ];
+
             todo!()
         }
 
@@ -85,10 +144,10 @@ fn match_item(m: ast::Match) -> Result<Opcodes, String> {
         } => todo!(),
         Match::WithoutQuantifier {
             item: MatchItem::MatchAnyCharacter,
-        } => Ok(vec![Opcode::Any]),
+        } => Ok(vec![RelativeOpcode::Any]),
         Match::WithoutQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
-        } => Ok(vec![Opcode::Consume(InstConsume::new(c))]),
+        } => Ok(vec![RelativeOpcode::Consume(c)]),
         Match::WithoutQuantifier {
             item: MatchItem::MatchCharacterClass(_mcc),
         } => todo!(),
