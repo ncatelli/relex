@@ -157,7 +157,38 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
 
             Ok(joined_block)
         }
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(cnt))),
+        } => {
+            let min_match = vec![RelativeOpcode::Any; cnt as usize];
+            let optional = vec![
+                // looping match case first (3) signifies lazy consumption
+                RelativeOpcode::Split(3, 1),
+                RelativeOpcode::Any,
+                RelativeOpcode::Jmp(-2),
+            ];
+            let joined_block = min_match.into_iter().chain(optional.into_iter()).collect();
 
+            Ok(joined_block)
+        }
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier: Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(cnt))),
+        } => {
+            let min_match = vec![RelativeOpcode::Consume(c); cnt as usize];
+            let optional = vec![
+                // looping match case first (3) signifies lazy consumption
+                RelativeOpcode::Split(3, 1),
+                RelativeOpcode::Consume(c),
+                RelativeOpcode::Jmp(-2),
+            ];
+            let joined_block = min_match.into_iter().chain(optional.into_iter()).collect();
+
+            Ok(joined_block)
+        }
+
+        // Catch-all todo
         Match::WithQuantifier {
             item: _,
             quantifier: _,
