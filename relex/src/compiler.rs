@@ -19,32 +19,34 @@ enum RelativeOpcode {
 }
 
 impl RelativeOpcode {
-    fn to_opcode_with_index_unchecked(&self, idx: usize) -> Opcode {
+    fn to_opcode_with_index(&self, idx: usize) -> Option<Opcode> {
         match self {
-            RelativeOpcode::Any => Opcode::Any,
-            RelativeOpcode::Consume(c) => Opcode::Consume(InstConsume::new(*c)),
+            RelativeOpcode::Any => Some(Opcode::Any),
+            RelativeOpcode::Consume(c) => Some(Opcode::Consume(InstConsume::new(*c))),
             RelativeOpcode::Split(rel_x, rel_y) => {
                 let signed_idx = idx as isize;
-                let x = signed_idx + rel_x;
-                let y = signed_idx + rel_y;
+                let x: usize = (signed_idx + rel_x).try_into().ok()?;
+                let y: usize = (signed_idx + rel_y).try_into().ok()?;
 
-                // this should be made safe.
-                Opcode::Split(InstSplit::new(
-                    InstIndex::from(x as usize),
-                    InstIndex::from(y as usize),
-                ))
+                Some(Opcode::Split(InstSplit::new(
+                    InstIndex::from(x),
+                    InstIndex::from(y),
+                )))
             }
             RelativeOpcode::Jmp(rel_jmp_to) => {
                 let signed_idx = idx as isize;
-                let jmp_to = signed_idx + rel_jmp_to;
+                let jmp_to: usize = (signed_idx + rel_jmp_to).try_into().ok()?;
 
-                // this should be made safe.
-                Opcode::Jmp(InstJmp::new(InstIndex::from(jmp_to as usize)))
+                Some(Opcode::Jmp(InstJmp::new(InstIndex::from(jmp_to))))
             }
-            RelativeOpcode::StartSave(slot) => Opcode::StartSave(InstStartSave::new(*slot)),
-            RelativeOpcode::EndSave(slot) => Opcode::EndSave(InstEndSave::new(*slot)),
-            RelativeOpcode::Match => Opcode::Match,
+            RelativeOpcode::StartSave(slot) => Some(Opcode::StartSave(InstStartSave::new(*slot))),
+            RelativeOpcode::EndSave(slot) => Some(Opcode::EndSave(InstEndSave::new(*slot))),
+            RelativeOpcode::Match => Some(Opcode::Match),
         }
+    }
+
+    fn to_opcode_with_index_unchecked(&self, idx: usize) -> Opcode {
+        self.to_opcode_with_index(idx).unwrap()
     }
 }
 
