@@ -8,6 +8,7 @@ use relex_runtime::*;
 /// This type is meant to exist only internally and should be
 /// refined to the `relex_runtime::Opcode type
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 enum RelativeOpcode {
     Any,
     Consume(char),
@@ -132,6 +133,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => {
             let min_match = vec![RelativeOpcode::Any; cnt as usize];
             let optional = vec![
+                // looping match case first (1) signifies eager consumption
                 RelativeOpcode::Split(1, 3),
                 RelativeOpcode::Any,
                 RelativeOpcode::Jmp(-2),
@@ -146,6 +148,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => {
             let min_match = vec![RelativeOpcode::Consume(c); cnt as usize];
             let optional = vec![
+                // looping match case first (1) signifies eager consumption
                 RelativeOpcode::Split(1, 3),
                 RelativeOpcode::Consume(c),
                 RelativeOpcode::Jmp(-2),
