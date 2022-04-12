@@ -132,7 +132,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => {
             let min_match = vec![RelativeOpcode::Any; cnt as usize];
             let optional = vec![
-                RelativeOpcode::Split(3, 1),
+                RelativeOpcode::Split(1, 3),
                 RelativeOpcode::Any,
                 RelativeOpcode::Jmp(-2),
             ];
@@ -146,7 +146,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => {
             let min_match = vec![RelativeOpcode::Consume(c); cnt as usize];
             let optional = vec![
-                RelativeOpcode::Split(3, 1),
+                RelativeOpcode::Split(1, 3),
                 RelativeOpcode::Consume(c),
                 RelativeOpcode::Jmp(-2),
             ];
@@ -309,7 +309,7 @@ mod tests {
             Ok(Instructions::new(vec![
                 Opcode::Any,
                 Opcode::Any,
-                Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(3))),
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(5))),
                 Opcode::Any,
                 Opcode::Jmp(InstJmp::new(InstIndex::from(2))),
                 Opcode::Match
@@ -329,7 +329,7 @@ mod tests {
             Ok(Instructions::new(vec![
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Consume(InstConsume::new('a')),
-                Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(3))),
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(5))),
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Jmp(InstJmp::new(InstIndex::from(2))),
                 Opcode::Match

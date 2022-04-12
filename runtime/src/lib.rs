@@ -704,14 +704,14 @@ mod tests {
     fn should_evaluate_quantifier_expression() {
         let tests = vec![
             (vec![SaveGroupSlot::complete(0, 0, 2)], "aab"),
-            // (vec![SaveGroupSlot::complete(0, 0, 3)], "aaab"),
+            (vec![SaveGroupSlot::complete(0, 0, 3)], "aaab"),
         ];
 
         let prog = Instructions::new(vec![
             Opcode::StartSave(InstStartSave::new(0)),
             Opcode::Consume(InstConsume::new('a')),
             Opcode::Consume(InstConsume::new('a')),
-            Opcode::Split(InstSplit::new(InstIndex::from(6), InstIndex::from(4))),
+            Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(6))),
             Opcode::Consume(InstConsume::new('a')),
             Opcode::Jmp(InstJmp::new(InstIndex::from(3))),
             Opcode::EndSave(InstEndSave::new(0)),
