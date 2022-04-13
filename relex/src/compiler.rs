@@ -157,6 +157,54 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
 
             Ok(joined_block)
         }
+        // match between range
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier:
+                Quantifier::Eager(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(lower),
+                    upper_bound: Integer(upper),
+                }),
+        } => {
+            let optional_range_size = upper - lower;
+            let min_match = vec![RelativeOpcode::Any; lower as usize];
+            let optional = (0..optional_range_size).flat_map(|idx| {
+                let split_to = 2 * (optional_range_size - idx);
+                vec![
+                    // Eagerly consume the next value or split to the end of the optionals.
+                    RelativeOpcode::Split(1, split_to),
+                    RelativeOpcode::Any,
+                ]
+            });
+
+            let joined_block = min_match.into_iter().chain(optional).collect();
+
+            Ok(joined_block)
+        }
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier:
+                Quantifier::Eager(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(lower),
+                    upper_bound: Integer(upper),
+                }),
+        } => {
+            let optional_range_size = upper - lower;
+            let min_match = vec![RelativeOpcode::Consume(c); lower as usize];
+            let optional = (0..optional_range_size).flat_map(|idx| {
+                let split_to = 2 * (optional_range_size - idx);
+                vec![
+                    // Eagerly consume the next value or split to the end of the optionals.
+                    RelativeOpcode::Split(1, split_to),
+                    RelativeOpcode::Consume(c),
+                ]
+            });
+
+            let joined_block = min_match.into_iter().chain(optional).collect();
+
+            Ok(joined_block)
+        }
+
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
             quantifier: Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(cnt))),
@@ -327,7 +375,7 @@ mod tests {
     }
 
     #[test]
-    fn should_compile_exact_match_at_least_quantified_item() {
+    fn should_compile_match_at_least_quantified_item() {
         use ast::*;
         use relex_runtime::*;
 
@@ -366,6 +414,60 @@ mod tests {
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(5))),
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Jmp(InstJmp::new(InstIndex::from(2))),
+                Opcode::Match
+            ])),
+            compile(regex_ast)
+        );
+    }
+
+    #[test]
+    fn should_compile_match_between_quantified_item() {
+        use ast::*;
+        use relex_runtime::*;
+
+        // equivalent to `^.{2,4}`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithQuantifier {
+                item: MatchItem::MatchAnyCharacter,
+                quantifier: Quantifier::Eager(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(2),
+                    upper_bound: Integer(4),
+                }),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::Any,
+                Opcode::Any,
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(6))),
+                Opcode::Any,
+                Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(6))),
+                Opcode::Any,
+                Opcode::Match
+            ])),
+            compile(regex_ast)
+        );
+
+        // equivalent to `^a{2,4}`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithQuantifier {
+                item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                quantifier: Quantifier::Eager(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(2),
+                    upper_bound: Integer(4),
+                }),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(6))),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(6))),
+                Opcode::Consume(InstConsume::new('a')),
                 Opcode::Match
             ])),
             compile(regex_ast)
