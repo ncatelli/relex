@@ -701,7 +701,28 @@ mod tests {
     }
 
     #[test]
-    fn should_evaluate_quantifier_expression() {
+    fn should_evaluate_eager_match_exact_quantifier_expression() {
+        let tests = vec![
+            (vec![SaveGroupSlot::complete(0, 0, 2)], "aab"),
+            (vec![SaveGroupSlot::complete(0, 0, 2)], "aaab"),
+        ];
+
+        let prog = Instructions::new(vec![
+            Opcode::StartSave(InstStartSave::new(0)),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::EndSave(InstEndSave::new(0)),
+            Opcode::Match,
+        ]);
+
+        for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
+            let res = run::<1>(&prog.program, input);
+            assert_eq!((case_id, expected_res), (case_id, res));
+        }
+    }
+
+    #[test]
+    fn should_evaluate_eager_match_atleast_quantifier_expression() {
         let tests = vec![
             (vec![SaveGroupSlot::complete(0, 0, 2)], "aab"),
             (vec![SaveGroupSlot::complete(0, 0, 3)], "aaab"),
@@ -714,6 +735,33 @@ mod tests {
             Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(6))),
             Opcode::Consume(InstConsume::new('a')),
             Opcode::Jmp(InstJmp::new(InstIndex::from(3))),
+            Opcode::EndSave(InstEndSave::new(0)),
+            Opcode::Match,
+        ]);
+
+        for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
+            let res = run::<1>(&prog.program, input);
+            assert_eq!((case_id, expected_res), (case_id, res));
+        }
+    }
+
+    #[test]
+    #[ignore = "unimplemented"]
+    fn should_evaluate_eager_match_between_quantifier_expression() {
+        let tests = vec![
+            (vec![SaveGroupSlot::complete(0, 0, 2)], "aab"),
+            (vec![SaveGroupSlot::complete(0, 0, 3)], "aaab"),
+            (vec![SaveGroupSlot::complete(0, 0, 4)], "aaaab"),
+        ];
+
+        let prog = Instructions::new(vec![
+            Opcode::StartSave(InstStartSave::new(0)),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(7))),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Split(InstSplit::new(InstIndex::from(6), InstIndex::from(7))),
+            Opcode::Consume(InstConsume::new('a')),
             Opcode::EndSave(InstEndSave::new(0)),
             Opcode::Match,
         ]);
