@@ -113,6 +113,56 @@ fn subexpression(subexpr: ast::SubExpression) -> Result<RelativeOpcodes, String>
         .map(|opcodes| opcodes.into_iter().flatten().collect())
 }
 
+macro_rules! generate_range_quantifier_block {
+    (eager, $min:expr, $consumer:expr) => {
+        Ok(vec![$consumer; $min as usize]
+            .into_iter()
+            .chain(
+                vec![
+                    RelativeOpcode::Split(1, 3),
+                    $consumer,
+                    RelativeOpcode::Jmp(-2),
+                ]
+                .into_iter(),
+            )
+            .collect())
+    };
+
+    (lazy, $min:expr, $consumer:expr) => {
+        Ok(vec![$consumer; $min as usize]
+            .into_iter()
+            .chain(
+                vec![
+                    RelativeOpcode::Split(3, 1),
+                    $consumer,
+                    RelativeOpcode::Jmp(-2),
+                ]
+                .into_iter(),
+            )
+            .collect())
+    };
+
+    (eager, $min:expr, $max:expr, $consumer:expr) => {
+        Ok(vec![$consumer; $min as usize]
+            .into_iter()
+            .chain((0..($max - $min)).flat_map(|idx| {
+                let split_to = 2 * (($max - $min) - idx);
+                vec![RelativeOpcode::Split(1, split_to), $consumer]
+            }))
+            .collect())
+    };
+
+    (lazy, $min:expr, $max:expr, $consumer:expr) => {
+        Ok(vec![$consumer; $min as usize]
+            .into_iter()
+            .chain((0..($max - $min)).flat_map(|idx| {
+                let split_to = 2 * (($max - $min) - idx);
+                vec![RelativeOpcode::Split(split_to, 1), $consumer]
+            }))
+            .collect())
+    };
+}
+
 fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
     use ast::{Char, Integer, Match, MatchCharacter, MatchItem, Quantifier, QuantifierType};
 
@@ -126,37 +176,27 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
             quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(cnt))),
         } => Ok(vec![RelativeOpcode::Consume(c); cnt as usize]),
+
         // match at least
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
             quantifier: Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(cnt))),
-        } => {
-            let min_match = vec![RelativeOpcode::Any; cnt as usize];
-            let optional = vec![
-                // looping match case first (1) signifies eager consumption
-                RelativeOpcode::Split(1, 3),
-                RelativeOpcode::Any,
-                RelativeOpcode::Jmp(-2),
-            ];
-            let joined_block = min_match.into_iter().chain(optional.into_iter()).collect();
-
-            Ok(joined_block)
-        }
+        } => generate_range_quantifier_block!(eager, cnt, RelativeOpcode::Any),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
             quantifier: Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(cnt))),
-        } => {
-            let min_match = vec![RelativeOpcode::Consume(c); cnt as usize];
-            let optional = vec![
-                // looping match case first (1) signifies eager consumption
-                RelativeOpcode::Split(1, 3),
-                RelativeOpcode::Consume(c),
-                RelativeOpcode::Jmp(-2),
-            ];
-            let joined_block = min_match.into_iter().chain(optional.into_iter()).collect();
+        } => generate_range_quantifier_block!(eager, cnt, RelativeOpcode::Consume(c)),
 
-            Ok(joined_block)
-        }
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(cnt))),
+        } => generate_range_quantifier_block!(lazy, cnt, RelativeOpcode::Any),
+
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier: Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(cnt))),
+        } => generate_range_quantifier_block!(lazy, cnt, RelativeOpcode::Consume(c)),
+
         // match between range
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
@@ -165,22 +205,8 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
                     lower_bound: Integer(lower),
                     upper_bound: Integer(upper),
                 }),
-        } => {
-            let optional_range_size = upper - lower;
-            let min_match = vec![RelativeOpcode::Any; lower as usize];
-            let optional = (0..optional_range_size).flat_map(|idx| {
-                let split_to = 2 * (optional_range_size - idx);
-                vec![
-                    // Eagerly consume the next value or split to the end of the optionals.
-                    RelativeOpcode::Split(1, split_to),
-                    RelativeOpcode::Any,
-                ]
-            });
+        } => generate_range_quantifier_block!(eager, lower, upper, RelativeOpcode::Any),
 
-            let joined_block = min_match.into_iter().chain(optional).collect();
-
-            Ok(joined_block)
-        }
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
             quantifier:
@@ -188,53 +214,25 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
                     lower_bound: Integer(lower),
                     upper_bound: Integer(upper),
                 }),
-        } => {
-            let optional_range_size = upper - lower;
-            let min_match = vec![RelativeOpcode::Consume(c); lower as usize];
-            let optional = (0..optional_range_size).flat_map(|idx| {
-                let split_to = 2 * (optional_range_size - idx);
-                vec![
-                    // Eagerly consume the next value or split to the end of the optionals.
-                    RelativeOpcode::Split(1, split_to),
-                    RelativeOpcode::Consume(c),
-                ]
-            });
-
-            let joined_block = min_match.into_iter().chain(optional).collect();
-
-            Ok(joined_block)
-        }
+        } => generate_range_quantifier_block!(eager, lower, upper, RelativeOpcode::Consume(c)),
 
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
-            quantifier: Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(cnt))),
-        } => {
-            let min_match = vec![RelativeOpcode::Any; cnt as usize];
-            let optional = vec![
-                // looping match case first (3) signifies lazy consumption
-                RelativeOpcode::Split(3, 1),
-                RelativeOpcode::Any,
-                RelativeOpcode::Jmp(-2),
-            ];
-            let joined_block = min_match.into_iter().chain(optional.into_iter()).collect();
+            quantifier:
+                Quantifier::Lazy(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(lower),
+                    upper_bound: Integer(upper),
+                }),
+        } => generate_range_quantifier_block!(lazy, lower, upper, RelativeOpcode::Any),
 
-            Ok(joined_block)
-        }
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
-            quantifier: Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(cnt))),
-        } => {
-            let min_match = vec![RelativeOpcode::Consume(c); cnt as usize];
-            let optional = vec![
-                // looping match case first (3) signifies lazy consumption
-                RelativeOpcode::Split(3, 1),
-                RelativeOpcode::Consume(c),
-                RelativeOpcode::Jmp(-2),
-            ];
-            let joined_block = min_match.into_iter().chain(optional.into_iter()).collect();
-
-            Ok(joined_block)
-        }
+            quantifier:
+                Quantifier::Lazy(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(lower),
+                    upper_bound: Integer(upper),
+                }),
+        } => generate_range_quantifier_block!(lazy, lower, upper, RelativeOpcode::Consume(c)),
 
         // Catch-all todo
         Match::WithQuantifier {
