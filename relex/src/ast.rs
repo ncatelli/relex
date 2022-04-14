@@ -301,7 +301,7 @@ pub trait IsQuantifierType: Into<QuantifierType> {}
 #[derive(Debug, PartialEq)]
 pub enum QuantifierType {
     MatchExactRange(Integer),
-    MatchAtleastRange(Integer),
+    MatchAtLeastRange(Integer),
     MatchBetweenRange {
         lower_bound: Integer,
         upper_bound: Integer,
@@ -342,7 +342,7 @@ impl From<RangeQuantifier> for QuantifierType {
 
         match (lower_bound, upper_bound) {
             (lower, None) => QuantifierType::MatchExactRange(lower.0),
-            (lower, Some(None)) => QuantifierType::MatchAtleastRange(lower.0),
+            (lower, Some(None)) => QuantifierType::MatchAtLeastRange(lower.0),
             (lower, Some(Some(upper))) => QuantifierType::MatchBetweenRange {
                 lower_bound: lower.0,
                 upper_bound: upper.0,
@@ -357,7 +357,7 @@ pub struct LazyModifier;
 
 /// A Regex Range Qualifier representable by the following three expressions.
 /// `{n}`: Match exactly.
-/// `{n,}`: Match atleast.
+/// `{n,}`: Match at least.
 /// `{n,m}` Match between range.
 pub struct RangeQuantifier {
     lower_bound: RangeQuantifierLowerBound,

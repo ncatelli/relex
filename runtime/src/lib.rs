@@ -237,7 +237,7 @@ impl Display for Instruction {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Opcode {
     Any,
     Consume(InstConsume),
@@ -292,7 +292,7 @@ impl Display for InstAny {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InstConsume {
     value: char,
 }
@@ -310,7 +310,7 @@ impl Display for InstConsume {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InstSplit {
     x_branch: InstIndex,
     y_branch: InstIndex,
@@ -337,7 +337,7 @@ impl Display for InstSplit {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InstJmp {
     next: InstIndex,
 }
@@ -350,11 +350,11 @@ impl InstJmp {
 
 impl Display for InstJmp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Jump: ({:04})", self.next.as_usize())
+        write!(f, "JumpAbs: ({:04})", self.next.as_usize())
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InstStartSave {
     slot_id: usize,
 }
@@ -372,7 +372,7 @@ impl Display for InstStartSave {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InstEndSave {
     slot_id: usize,
 }
@@ -698,6 +698,78 @@ mod tests {
 
         let res = run::<2>(&prog.program, input);
         assert_eq!(expected_res, res)
+    }
+
+    #[test]
+    fn should_evaluate_eager_match_exact_quantifier_expression() {
+        let tests = vec![
+            (vec![SaveGroupSlot::complete(0, 0, 2)], "aab"),
+            (vec![SaveGroupSlot::complete(0, 0, 2)], "aaab"),
+        ];
+
+        let prog = Instructions::new(vec![
+            Opcode::StartSave(InstStartSave::new(0)),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::EndSave(InstEndSave::new(0)),
+            Opcode::Match,
+        ]);
+
+        for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
+            let res = run::<1>(&prog.program, input);
+            assert_eq!((case_id, expected_res), (case_id, res));
+        }
+    }
+
+    #[test]
+    fn should_evaluate_eager_match_atleast_quantifier_expression() {
+        let tests = vec![
+            (vec![SaveGroupSlot::complete(0, 0, 2)], "aab"),
+            (vec![SaveGroupSlot::complete(0, 0, 3)], "aaab"),
+        ];
+
+        let prog = Instructions::new(vec![
+            Opcode::StartSave(InstStartSave::new(0)),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(6))),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Jmp(InstJmp::new(InstIndex::from(3))),
+            Opcode::EndSave(InstEndSave::new(0)),
+            Opcode::Match,
+        ]);
+
+        for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
+            let res = run::<1>(&prog.program, input);
+            assert_eq!((case_id, expected_res), (case_id, res));
+        }
+    }
+
+    #[test]
+    #[ignore = "unimplemented"]
+    fn should_evaluate_eager_match_between_quantifier_expression() {
+        let tests = vec![
+            (vec![SaveGroupSlot::complete(0, 0, 2)], "aab"),
+            (vec![SaveGroupSlot::complete(0, 0, 3)], "aaab"),
+            (vec![SaveGroupSlot::complete(0, 0, 4)], "aaaab"),
+        ];
+
+        let prog = Instructions::new(vec![
+            Opcode::StartSave(InstStartSave::new(0)),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(7))),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Split(InstSplit::new(InstIndex::from(6), InstIndex::from(7))),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::EndSave(InstEndSave::new(0)),
+            Opcode::Match,
+        ]);
+
+        for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
+            let res = run::<1>(&prog.program, input);
+            assert_eq!((case_id, expected_res), (case_id, res));
+        }
     }
 
     #[test]

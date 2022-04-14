@@ -1,20 +1,72 @@
 use super::ast;
 use relex_runtime::*;
 
+/// A internal representation of the `relex_runtime::Opcode` type, with relative
+/// addressing.
+///
+/// ## Note
+/// This type is meant to exist only internally and should be
+/// refined to the `relex_runtime::Opcode type
+#[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
+enum RelativeOpcode {
+    Any,
+    Consume(char),
+    Split(isize, isize),
+    Jmp(isize),
+    StartSave(usize),
+    EndSave(usize),
+    Match,
+}
+
+impl RelativeOpcode {
+    fn to_opcode_with_index(&self, idx: usize) -> Option<Opcode> {
+        match self {
+            RelativeOpcode::Any => Some(Opcode::Any),
+            RelativeOpcode::Consume(c) => Some(Opcode::Consume(InstConsume::new(*c))),
+            RelativeOpcode::Split(rel_x, rel_y) => {
+                let signed_idx = idx as isize;
+                let x: usize = (signed_idx + rel_x).try_into().ok()?;
+                let y: usize = (signed_idx + rel_y).try_into().ok()?;
+
+                Some(Opcode::Split(InstSplit::new(
+                    InstIndex::from(x),
+                    InstIndex::from(y),
+                )))
+            }
+            RelativeOpcode::Jmp(rel_jmp_to) => {
+                let signed_idx = idx as isize;
+                let jmp_to: usize = (signed_idx + rel_jmp_to).try_into().ok()?;
+
+                Some(Opcode::Jmp(InstJmp::new(InstIndex::from(jmp_to))))
+            }
+            RelativeOpcode::StartSave(slot) => Some(Opcode::StartSave(InstStartSave::new(*slot))),
+            RelativeOpcode::EndSave(slot) => Some(Opcode::EndSave(InstEndSave::new(*slot))),
+            RelativeOpcode::Match => Some(Opcode::Match),
+        }
+    }
+
+    fn to_opcode_with_index_unchecked(&self, idx: usize) -> Opcode {
+        self.to_opcode_with_index(idx).unwrap()
+    }
+}
+
 type Opcodes = Vec<Opcode>;
+type RelativeOpcodes = Vec<RelativeOpcode>;
 
 pub fn compile(regex_ast: ast::Regex) -> Result<Instructions, String> {
-    let suffix = [Opcode::Match];
+    let suffix = [RelativeOpcode::Match];
 
-    match regex_ast {
+    let relative_ops: Result<RelativeOpcodes, _> = match regex_ast {
         ast::Regex::StartOfStringAnchored(expr) => {
             expression(expr).map(|expr| expr.into_iter().chain(suffix.into_iter()).collect())
         }
         ast::Regex::Unanchored(expr) => expression(expr).map(|expr| {
+            // match anything
             let prefix = [
-                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
-                Opcode::Any,
-                Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                RelativeOpcode::Split(3, 1),
+                RelativeOpcode::Any,
+                RelativeOpcode::Jmp(-2),
             ];
 
             prefix
@@ -23,21 +75,30 @@ pub fn compile(regex_ast: ast::Regex) -> Result<Instructions, String> {
                 .chain(suffix.into_iter())
                 .collect()
         }),
-    }
-    .map(Instructions::new)
+    };
+
+    relative_ops
+        .map(|rel_ops| {
+            rel_ops
+                .into_iter()
+                .enumerate()
+                .map(|(idx, op)| op.to_opcode_with_index_unchecked(idx))
+                .collect::<Opcodes>()
+        })
+        .map(Instructions::new)
 }
 
-fn expression(expr: ast::Expression) -> Result<Opcodes, String> {
+fn expression(expr: ast::Expression) -> Result<RelativeOpcodes, String> {
     let ast::Expression(subexprs) = expr;
 
     subexprs
         .into_iter()
         .map(subexpression)
-        .collect::<Result<Vec<Opcodes>, _>>()
+        .collect::<Result<Vec<_>, _>>()
         .map(|opcodes| opcodes.into_iter().flatten().collect())
 }
 
-fn subexpression(subexpr: ast::SubExpression) -> Result<Opcodes, String> {
+fn subexpression(subexpr: ast::SubExpression) -> Result<RelativeOpcodes, String> {
     let ast::SubExpression(items) = subexpr;
 
     items
@@ -48,24 +109,145 @@ fn subexpression(subexpr: ast::SubExpression) -> Result<Opcodes, String> {
             ast::SubExpressionItem::Anchor(_) => todo!(),
             ast::SubExpressionItem::Backreference(_) => unimplemented!(),
         })
-        .collect::<Result<Vec<Opcodes>, _>>()
+        .collect::<Result<Vec<_>, _>>()
         .map(|opcodes| opcodes.into_iter().flatten().collect())
 }
 
-fn match_item(m: ast::Match) -> Result<Opcodes, String> {
-    use ast::{Char, Match, MatchCharacter, MatchItem};
+macro_rules! generate_range_quantifier_block {
+    (eager, $min:expr, $consumer:expr) => {
+        Ok(vec![$consumer; $min as usize]
+            .into_iter()
+            .chain(
+                vec![
+                    RelativeOpcode::Split(1, 3),
+                    $consumer,
+                    RelativeOpcode::Jmp(-2),
+                ]
+                .into_iter(),
+            )
+            .collect())
+    };
+
+    (lazy, $min:expr, $consumer:expr) => {
+        Ok(vec![$consumer; $min as usize]
+            .into_iter()
+            .chain(
+                vec![
+                    RelativeOpcode::Split(3, 1),
+                    $consumer,
+                    RelativeOpcode::Jmp(-2),
+                ]
+                .into_iter(),
+            )
+            .collect())
+    };
+
+    (eager, $min:expr, $max:expr, $consumer:expr) => {
+        Ok(vec![$consumer; $min as usize]
+            .into_iter()
+            .chain((0..($max - $min)).flat_map(|idx| {
+                let split_to = 2 * (($max - $min) - idx);
+                vec![RelativeOpcode::Split(1, split_to), $consumer]
+            }))
+            .collect())
+    };
+
+    (lazy, $min:expr, $max:expr, $consumer:expr) => {
+        Ok(vec![$consumer; $min as usize]
+            .into_iter()
+            .chain((0..($max - $min)).flat_map(|idx| {
+                let split_to = 2 * (($max - $min) - idx);
+                vec![RelativeOpcode::Split(split_to, 1), $consumer]
+            }))
+            .collect())
+    };
+}
+
+fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
+    use ast::{Char, Integer, Match, MatchCharacter, MatchItem, Quantifier, QuantifierType};
 
     match m {
+        // match exact
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(cnt))),
+        } => Ok(vec![RelativeOpcode::Any; cnt as usize]),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(cnt))),
+        } => Ok(vec![RelativeOpcode::Consume(c); cnt as usize]),
+
+        // match at least
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(cnt))),
+        } => generate_range_quantifier_block!(eager, cnt, RelativeOpcode::Any),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier: Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(cnt))),
+        } => generate_range_quantifier_block!(eager, cnt, RelativeOpcode::Consume(c)),
+
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(cnt))),
+        } => generate_range_quantifier_block!(lazy, cnt, RelativeOpcode::Any),
+
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier: Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(cnt))),
+        } => generate_range_quantifier_block!(lazy, cnt, RelativeOpcode::Consume(c)),
+
+        /*
+        Blocking out until I can address a better pattern for match between generation
+
+        // match between range
+         Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier:
+                Quantifier::Eager(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(lower),
+                    upper_bound: Integer(upper),
+                }),
+        } => generate_range_quantifier_block!(eager, lower, upper, RelativeOpcode::Any),
+
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier:
+                Quantifier::Eager(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(lower),
+                    upper_bound: Integer(upper),
+                }),
+        } => generate_range_quantifier_block!(eager, lower, upper, RelativeOpcode::Consume(c)),
+
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier:
+                Quantifier::Lazy(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(lower),
+                    upper_bound: Integer(upper),
+                }),
+        } => generate_range_quantifier_block!(lazy, lower, upper, RelativeOpcode::Any),
+
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier:
+                Quantifier::Lazy(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(lower),
+                    upper_bound: Integer(upper),
+                }),
+        } => generate_range_quantifier_block!(lazy, lower, upper, RelativeOpcode::Consume(c)),
+        */
+        // Catch-all todo
         Match::WithQuantifier {
             item: _,
             quantifier: _,
         } => todo!(),
         Match::WithoutQuantifier {
             item: MatchItem::MatchAnyCharacter,
-        } => Ok(vec![Opcode::Any]),
+        } => Ok(vec![RelativeOpcode::Any]),
         Match::WithoutQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
-        } => Ok(vec![Opcode::Consume(InstConsume::new(c))]),
+        } => Ok(vec![RelativeOpcode::Consume(c)]),
         Match::WithoutQuantifier {
             item: MatchItem::MatchCharacterClass(_mcc),
         } => todo!(),
@@ -151,5 +333,146 @@ mod tests {
             ])),
             compile(regex_ast)
         )
+    }
+
+    #[test]
+    fn should_compile_exact_match_quantified_item() {
+        use ast::*;
+        use relex_runtime::*;
+
+        // equivalent to `^.{2}`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithQuantifier {
+                item: MatchItem::MatchAnyCharacter,
+                quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(2))),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::Any,
+                Opcode::Any,
+                Opcode::Match,
+            ])),
+            compile(regex_ast)
+        );
+
+        // equivalent to `^a{2}`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithQuantifier {
+                item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(2))),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Match,
+            ])),
+            compile(regex_ast)
+        )
+    }
+
+    #[test]
+    fn should_compile_match_at_least_quantified_item() {
+        use ast::*;
+        use relex_runtime::*;
+
+        // equivalent to `^.{2,}`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithQuantifier {
+                item: MatchItem::MatchAnyCharacter,
+                quantifier: Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(2))),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::Any,
+                Opcode::Any,
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(5))),
+                Opcode::Any,
+                Opcode::Jmp(InstJmp::new(InstIndex::from(2))),
+                Opcode::Match
+            ])),
+            compile(regex_ast)
+        );
+
+        // equivalent to `^a{2,}`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithQuantifier {
+                item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                quantifier: Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(2))),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(5))),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Jmp(InstJmp::new(InstIndex::from(2))),
+                Opcode::Match
+            ])),
+            compile(regex_ast)
+        );
+    }
+
+    #[test]
+    #[ignore = "unimplemented"]
+    fn should_compile_match_between_quantified_item() {
+        use ast::*;
+        use relex_runtime::*;
+
+        // equivalent to `^.{2,4}`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithQuantifier {
+                item: MatchItem::MatchAnyCharacter,
+                quantifier: Quantifier::Eager(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(2),
+                    upper_bound: Integer(4),
+                }),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::Any,
+                Opcode::Any,
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(6))),
+                Opcode::Any,
+                Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(6))),
+                Opcode::Any,
+                Opcode::Match
+            ])),
+            compile(regex_ast)
+        );
+
+        // equivalent to `^a{2,4}`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithQuantifier {
+                item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                quantifier: Quantifier::Eager(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(2),
+                    upper_bound: Integer(4),
+                }),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(6))),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(6))),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Match
+            ])),
+            compile(regex_ast)
+        );
     }
 }
