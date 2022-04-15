@@ -13,7 +13,19 @@ pub enum SaveGroupSlot {
 }
 
 impl SaveGroupSlot {
-    /// returns a completed
+    /// Returns a boolean representing if the savegroup slot is of the `None`
+    /// variant, signifying a match was not found.
+    pub fn is_none(&self) -> bool {
+        matches!(self, SaveGroupSlot::None)
+    }
+
+    /// Returns a boolean representing if the savegroup slot is of the
+    /// `Complete` variant, signifying a match was found.
+    pub fn is_complete(&self) -> bool {
+        !self.is_none()
+    }
+
+    /// Returns a completed save group from its constituent parts.
     pub const fn complete(slot_id: usize, start: usize, end: usize) -> Self {
         Self::Complete {
             slot_id,
@@ -491,8 +503,9 @@ fn add_thread(
     }
 }
 
-/// Executes a given program against a given input, with a passed number of
-/// `SG` save groups.
+/// Executes a given program against an input. If a match is found an
+/// `Optional` vector of savegroups is returned. A match occurs if all
+/// savegroup slots are marked complete and pattern match is found.
 pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<SaveGroupSlot>> {
     use core::mem::swap;
 
@@ -587,7 +600,9 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<
         }
     }
 
-    if matches > 0 {
+    // Signifies all savegroups are satisfied
+    let all_complete = sub.iter().all(|sg| sg.is_complete());
+    if matches > 0 && all_complete {
         Some(sub)
     } else {
         None
