@@ -13,7 +13,19 @@ pub enum SaveGroupSlot {
 }
 
 impl SaveGroupSlot {
-    /// returns a completed
+    /// Returns a boolean representing if the savegroup slot is of the `None`
+    /// variant, signifying a match was not found.
+    pub fn is_none(&self) -> bool {
+        matches!(self, SaveGroupSlot::None)
+    }
+
+    /// Returns a boolean representing if the savegroup slot is of the
+    /// `Complete` variant, signifying a match was found.
+    pub fn is_complete(&self) -> bool {
+        !self.is_none()
+    }
+
+    /// Returns a completed save group from its constituent parts.
     pub const fn complete(slot_id: usize, start: usize, end: usize) -> Self {
         Self::Complete {
             slot_id,
@@ -491,7 +503,10 @@ fn add_thread(
     }
 }
 
-pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGroupSlot> {
+/// Executes a given program against an input. If a match is found an
+/// `Optional` vector of savegroups is returned. A match occurs if all
+/// savegroup slots are marked complete and pattern match is found.
+pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<SaveGroupSlot>> {
     use core::mem::swap;
 
     let input_len = input.len();
@@ -502,8 +517,6 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
     let mut next_thread_list = Threads::with_set_size(program_len);
     // a running tracker of found matches
     let mut matches = 0;
-    // the maximum number of matches, equivalent to SG parameter.
-    let max_matches = SG;
 
     let mut sub = vec![SaveGroupSlot::None; SG];
 
@@ -568,12 +581,7 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
                 }
                 Some(Opcode::Match) => {
                     matches += 1;
-                    if matches == max_matches {
-                        // set a condition breaking break the outer while loop.
-                        break 'outer;
-                    } else {
-                        continue;
-                    }
+                    continue;
                 }
                 None => {
                     break 'outer;
@@ -592,7 +600,13 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
         }
     }
 
-    sub
+    // Signifies all savegroups are satisfied
+    let all_complete = sub.iter().all(|sg| sg.is_complete());
+    if matches > 0 && all_complete {
+        Some(sub)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -603,7 +617,7 @@ mod tests {
     fn should_evaluate_simple_linear_match_expression() {
         let progs = vec![
             (
-                vec![SaveGroupSlot::complete(0, 0, 1)],
+                Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
                 Instructions::new(vec![
                     Opcode::StartSave(InstStartSave::new(0)),
                     Opcode::Consume(InstConsume::new('a')),
@@ -612,7 +626,7 @@ mod tests {
                 ]),
             ),
             (
-                vec![SaveGroupSlot::None],
+                None,
                 Instructions::new(vec![
                     Opcode::StartSave(InstStartSave::new(0)),
                     Opcode::Consume(InstConsume::new('b')),
@@ -665,7 +679,7 @@ mod tests {
 
         for (test_num, (expected_res, prog)) in progs.into_iter().enumerate() {
             let res = run::<1>(&prog.program, input);
-            assert_eq!((test_num, expected_res), (test_num, res))
+            assert_eq!((test_num, Some(expected_res)), (test_num, res))
         }
     }
 
@@ -697,7 +711,7 @@ mod tests {
         let input = "aab";
 
         let res = run::<2>(&prog.program, input);
-        assert_eq!(expected_res, res)
+        assert_eq!(Some(expected_res), res)
     }
 
     #[test]
@@ -717,7 +731,7 @@ mod tests {
 
         for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
             let res = run::<1>(&prog.program, input);
-            assert_eq!((case_id, expected_res), (case_id, res));
+            assert_eq!((case_id, Some(expected_res)), (case_id, res));
         }
     }
 
@@ -741,12 +755,11 @@ mod tests {
 
         for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
             let res = run::<1>(&prog.program, input);
-            assert_eq!((case_id, expected_res), (case_id, res));
+            assert_eq!((case_id, Some(expected_res)), (case_id, res));
         }
     }
 
     #[test]
-    #[ignore = "unimplemented"]
     fn should_evaluate_eager_match_between_quantifier_expression() {
         let tests = vec![
             (vec![SaveGroupSlot::complete(0, 0, 2)], "aab"),
@@ -757,10 +770,10 @@ mod tests {
         let prog = Instructions::new(vec![
             Opcode::StartSave(InstStartSave::new(0)),
             Opcode::Consume(InstConsume::new('a')),
+            Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(4))),
             Opcode::Consume(InstConsume::new('a')),
-            Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(7))),
+            Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(6))),
             Opcode::Consume(InstConsume::new('a')),
-            Opcode::Split(InstSplit::new(InstIndex::from(6), InstIndex::from(7))),
             Opcode::Consume(InstConsume::new('a')),
             Opcode::EndSave(InstEndSave::new(0)),
             Opcode::Match,
@@ -768,7 +781,7 @@ mod tests {
 
         for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
             let res = run::<1>(&prog.program, input);
-            assert_eq!((case_id, expected_res), (case_id, res));
+            assert_eq!((case_id, Some(expected_res)), (case_id, res));
         }
     }
 

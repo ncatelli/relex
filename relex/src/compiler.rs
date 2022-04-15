@@ -143,22 +143,16 @@ macro_rules! generate_range_quantifier_block {
     };
 
     (eager, $min:expr, $max:expr, $consumer:expr) => {
-        Ok(vec![$consumer; $min as usize]
-            .into_iter()
-            .chain((0..($max - $min)).flat_map(|idx| {
-                let split_to = 2 * (($max - $min) - idx);
-                vec![RelativeOpcode::Split(1, split_to), $consumer]
-            }))
+        Ok((0..($max - $min))
+            .flat_map(|_| vec![$consumer, RelativeOpcode::Split(1, 2)])
+            .chain(vec![$consumer; $min as usize].into_iter())
             .collect())
     };
 
     (lazy, $min:expr, $max:expr, $consumer:expr) => {
-        Ok(vec![$consumer; $min as usize]
-            .into_iter()
-            .chain((0..($max - $min)).flat_map(|idx| {
-                let split_to = 2 * (($max - $min) - idx);
-                vec![RelativeOpcode::Split(split_to, 1), $consumer]
-            }))
+        Ok((0..($max - $min))
+            .flat_map(|_| vec![$consumer, RelativeOpcode::Split(2, 1)])
+            .chain(vec![$consumer; $min as usize].into_iter())
             .collect())
     };
 }
@@ -197,11 +191,8 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             quantifier: Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(cnt))),
         } => generate_range_quantifier_block!(lazy, cnt, RelativeOpcode::Consume(c)),
 
-        /*
-        Blocking out until I can address a better pattern for match between generation
-
         // match between range
-         Match::WithQuantifier {
+        Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
             quantifier:
                 Quantifier::Eager(QuantifierType::MatchBetweenRange {
@@ -236,7 +227,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
                     upper_bound: Integer(upper),
                 }),
         } => generate_range_quantifier_block!(lazy, lower, upper, RelativeOpcode::Consume(c)),
-        */
+
         // Catch-all todo
         Match::WithQuantifier {
             item: _,
@@ -422,7 +413,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "unimplemented"]
     fn should_compile_match_between_quantified_item() {
         use ast::*;
         use relex_runtime::*;
@@ -441,10 +431,10 @@ mod tests {
         assert_eq!(
             Ok(Instructions::new(vec![
                 Opcode::Any,
+                Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(3))),
                 Opcode::Any,
-                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(6))),
+                Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(5))),
                 Opcode::Any,
-                Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(6))),
                 Opcode::Any,
                 Opcode::Match
             ])),
@@ -465,10 +455,10 @@ mod tests {
         assert_eq!(
             Ok(Instructions::new(vec![
                 Opcode::Consume(InstConsume::new('a')),
+                Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(3))),
                 Opcode::Consume(InstConsume::new('a')),
-                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(6))),
+                Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(5))),
                 Opcode::Consume(InstConsume::new('a')),
-                Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(6))),
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Match
             ])),
