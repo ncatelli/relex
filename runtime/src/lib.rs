@@ -491,7 +491,29 @@ fn add_thread(
     }
 }
 
-pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGroupSlot> {
+#[derive(Debug, PartialEq)]
+pub enum PatternMatch {
+    Match(Vec<SaveGroupSlot>),
+    NoMatch,
+}
+
+impl PatternMatch {
+    pub fn ok(self) -> Result<Vec<SaveGroupSlot>, &'static str> {
+        match self {
+            PatternMatch::Match(slots) => Ok(slots),
+            PatternMatch::NoMatch => Err("no match found"),
+        }
+    }
+
+    pub fn ok_or_else<E, F>(self, f: impl FnOnce() -> E) -> Result<Vec<SaveGroupSlot>, E> {
+        match self {
+            PatternMatch::Match(slots) => Ok(slots),
+            PatternMatch::NoMatch => Err(f()),
+        }
+    }
+}
+
+pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> PatternMatch {
     use core::mem::swap;
 
     let input_len = input.len();
@@ -502,8 +524,6 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
     let mut next_thread_list = Threads::with_set_size(program_len);
     // a running tracker of found matches
     let mut matches = 0;
-    // the maximum number of matches, equivalent to SG parameter.
-    let max_matches = SG;
 
     let mut sub = vec![SaveGroupSlot::None; SG];
 
@@ -568,12 +588,7 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
                 }
                 Some(Opcode::Match) => {
                     matches += 1;
-                    if matches == max_matches {
-                        // set a condition breaking break the outer while loop.
-                        break 'outer;
-                    } else {
-                        continue;
-                    }
+                    continue;
                 }
                 None => {
                     break 'outer;
@@ -592,7 +607,11 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Vec<SaveGro
         }
     }
 
-    sub
+    if matches > 0 {
+        PatternMatch::Match(sub)
+    } else {
+        PatternMatch::NoMatch
+    }
 }
 
 #[cfg(test)]
@@ -603,7 +622,7 @@ mod tests {
     fn should_evaluate_simple_linear_match_expression() {
         let progs = vec![
             (
-                vec![SaveGroupSlot::complete(0, 0, 1)],
+                PatternMatch::Match(vec![SaveGroupSlot::complete(0, 0, 1)]),
                 Instructions::new(vec![
                     Opcode::StartSave(InstStartSave::new(0)),
                     Opcode::Consume(InstConsume::new('a')),
@@ -612,7 +631,7 @@ mod tests {
                 ]),
             ),
             (
-                vec![SaveGroupSlot::None],
+                PatternMatch::NoMatch,
                 Instructions::new(vec![
                     Opcode::StartSave(InstStartSave::new(0)),
                     Opcode::Consume(InstConsume::new('b')),
@@ -665,7 +684,7 @@ mod tests {
 
         for (test_num, (expected_res, prog)) in progs.into_iter().enumerate() {
             let res = run::<1>(&prog.program, input);
-            assert_eq!((test_num, expected_res), (test_num, res))
+            assert_eq!((test_num, Ok(expected_res)), (test_num, res.ok()))
         }
     }
 
@@ -697,7 +716,7 @@ mod tests {
         let input = "aab";
 
         let res = run::<2>(&prog.program, input);
-        assert_eq!(expected_res, res)
+        assert_eq!(Ok(expected_res), res.ok())
     }
 
     #[test]
@@ -717,7 +736,7 @@ mod tests {
 
         for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
             let res = run::<1>(&prog.program, input);
-            assert_eq!((case_id, expected_res), (case_id, res));
+            assert_eq!((case_id, Ok(expected_res)), (case_id, res.ok()));
         }
     }
 
@@ -741,12 +760,11 @@ mod tests {
 
         for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
             let res = run::<1>(&prog.program, input);
-            assert_eq!((case_id, expected_res), (case_id, res));
+            assert_eq!((case_id, Ok(expected_res)), (case_id, res.ok()));
         }
     }
 
     #[test]
-    #[ignore = "unimplemented"]
     fn should_evaluate_eager_match_between_quantifier_expression() {
         let tests = vec![
             (vec![SaveGroupSlot::complete(0, 0, 2)], "aab"),
@@ -757,10 +775,10 @@ mod tests {
         let prog = Instructions::new(vec![
             Opcode::StartSave(InstStartSave::new(0)),
             Opcode::Consume(InstConsume::new('a')),
+            Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(4))),
             Opcode::Consume(InstConsume::new('a')),
-            Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(7))),
+            Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(6))),
             Opcode::Consume(InstConsume::new('a')),
-            Opcode::Split(InstSplit::new(InstIndex::from(6), InstIndex::from(7))),
             Opcode::Consume(InstConsume::new('a')),
             Opcode::EndSave(InstEndSave::new(0)),
             Opcode::Match,
@@ -768,7 +786,7 @@ mod tests {
 
         for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
             let res = run::<1>(&prog.program, input);
-            assert_eq!((case_id, expected_res), (case_id, res));
+            assert_eq!((case_id, Ok(expected_res)), (case_id, res.ok()));
         }
     }
 
