@@ -601,7 +601,7 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<
     }
 
     // Signifies all savegroups are satisfied
-    let all_complete = sub.iter().all(|sg| sg.is_complete());
+    let all_complete = sub.iter().any(|sg| sg.is_none());
     if matches > 0 && all_complete {
         Some(sub)
     } else {
