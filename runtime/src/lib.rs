@@ -491,6 +491,8 @@ fn add_thread(
     }
 }
 
+/// Executes a given program against a given input, with a passed number of
+/// `SG` save groups.
 pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<SaveGroupSlot>> {
     use core::mem::swap;
 
