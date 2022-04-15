@@ -45,9 +45,9 @@ pub fn linear_input_size_comparison(c: &mut Criterion) {
                             Opcode::Match,
                         ]);
 
-                        let res = run::<1>(prog.as_ref(), input).ok();
+                        let res = run::<1>(prog.as_ref(), input);
                         assert_eq!(
-                            Ok(Some(&expected_res)),
+                            Some(Some(&expected_res)),
                             res.as_ref().map(|slots| slots.get(0))
                         )
                     })

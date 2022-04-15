@@ -491,29 +491,7 @@ fn add_thread(
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum PatternMatch {
-    Match(Vec<SaveGroupSlot>),
-    NoMatch,
-}
-
-impl PatternMatch {
-    pub fn ok(self) -> Result<Vec<SaveGroupSlot>, &'static str> {
-        match self {
-            PatternMatch::Match(slots) => Ok(slots),
-            PatternMatch::NoMatch => Err("no match found"),
-        }
-    }
-
-    pub fn ok_or_else<E, F>(self, f: impl FnOnce() -> E) -> Result<Vec<SaveGroupSlot>, E> {
-        match self {
-            PatternMatch::Match(slots) => Ok(slots),
-            PatternMatch::NoMatch => Err(f()),
-        }
-    }
-}
-
-pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> PatternMatch {
+pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<SaveGroupSlot>> {
     use core::mem::swap;
 
     let input_len = input.len();
@@ -608,9 +586,9 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> PatternMatc
     }
 
     if matches > 0 {
-        PatternMatch::Match(sub)
+        Some(sub)
     } else {
-        PatternMatch::NoMatch
+        None
     }
 }
 
@@ -622,7 +600,7 @@ mod tests {
     fn should_evaluate_simple_linear_match_expression() {
         let progs = vec![
             (
-                PatternMatch::Match(vec![SaveGroupSlot::complete(0, 0, 1)]),
+                Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
                 Instructions::new(vec![
                     Opcode::StartSave(InstStartSave::new(0)),
                     Opcode::Consume(InstConsume::new('a')),
@@ -631,7 +609,7 @@ mod tests {
                 ]),
             ),
             (
-                PatternMatch::NoMatch,
+                None,
                 Instructions::new(vec![
                     Opcode::StartSave(InstStartSave::new(0)),
                     Opcode::Consume(InstConsume::new('b')),
@@ -684,7 +662,7 @@ mod tests {
 
         for (test_num, (expected_res, prog)) in progs.into_iter().enumerate() {
             let res = run::<1>(&prog.program, input);
-            assert_eq!((test_num, Ok(expected_res)), (test_num, res.ok()))
+            assert_eq!((test_num, Some(expected_res)), (test_num, res))
         }
     }
 
@@ -716,7 +694,7 @@ mod tests {
         let input = "aab";
 
         let res = run::<2>(&prog.program, input);
-        assert_eq!(Ok(expected_res), res.ok())
+        assert_eq!(Some(expected_res), res)
     }
 
     #[test]
@@ -736,7 +714,7 @@ mod tests {
 
         for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
             let res = run::<1>(&prog.program, input);
-            assert_eq!((case_id, Ok(expected_res)), (case_id, res.ok()));
+            assert_eq!((case_id, Some(expected_res)), (case_id, res));
         }
     }
 
@@ -760,7 +738,7 @@ mod tests {
 
         for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
             let res = run::<1>(&prog.program, input);
-            assert_eq!((case_id, Ok(expected_res)), (case_id, res.ok()));
+            assert_eq!((case_id, Some(expected_res)), (case_id, res));
         }
     }
 
@@ -786,7 +764,7 @@ mod tests {
 
         for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
             let res = run::<1>(&prog.program, input);
-            assert_eq!((case_id, Ok(expected_res)), (case_id, res.ok()));
+            assert_eq!((case_id, Some(expected_res)), (case_id, res));
         }
     }
 
