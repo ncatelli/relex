@@ -253,7 +253,7 @@ impl Display for Instruction {
 pub enum Opcode {
     Any,
     Consume(InstConsume),
-    ConsumeSet(Box<InstConsumeSet>),
+    ConsumeSet(InstConsumeSet),
     Split(InstSplit),
     Jmp(InstJmp),
     StartSave(InstStartSave),
@@ -364,19 +364,19 @@ impl CharacterRangeSetVerifiable for CharacterRangeSet {
 /// characters. This functions as a brevity tool to prevent long alternations.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InstConsumeSet {
-    set: CharacterRangeSet,
+    set: Box<CharacterRangeSet>,
 }
 
 impl InstConsumeSet {
     #[must_use]
     pub fn new(set: CharacterRangeSet) -> Self {
-        Self { set }
+        Self { set: Box::new(set) }
     }
 }
 
 impl Display for InstConsumeSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ConsumeSet: {{{:?}}}", self.set)
+        write!(f, "ConsumeSet: {{{:?}}}", self.set.as_ref())
     }
 }
 
@@ -616,6 +616,7 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<
                         input,
                     );
                 }
+
                 Some(Opcode::Consume(InstConsume { value })) if Some(*value) == next_char => {
                     let thread_local_save_group =
                         if let SaveGroup::Allocated { slot_id } = save_group {
@@ -637,6 +638,30 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<
                 Some(Opcode::Consume(_)) => {
                     continue;
                 }
+
+                Some(Opcode::ConsumeSet(InstConsumeSet { set }))
+                    if next_char.map_or(false, |c| set.in_set(c)) =>
+                {
+                    let thread_local_save_group =
+                        if let SaveGroup::Allocated { slot_id } = save_group {
+                            SaveGroup::open(slot_id, input_idx)
+                        } else {
+                            save_group
+                        };
+
+                    next_thread_list = add_thread(
+                        program,
+                        &mut sub,
+                        next_thread_list,
+                        Thread::new(thread_local_save_group, default_next_inst_idx),
+                        input_idx + 1,
+                        input,
+                    );
+                }
+                Some(Opcode::ConsumeSet(_)) => {
+                    continue;
+                }
+
                 Some(Opcode::Match) => {
                     matches += 1;
                     continue;
@@ -697,6 +722,45 @@ mod tests {
         let input = "aab";
 
         for (expected_res, prog) in progs {
+            let res = run::<1>(&prog.program, input);
+            assert_eq!(expected_res, res)
+        }
+    }
+
+    #[test]
+    fn should_evaluate_set_match_expression() {
+        let progs = vec![
+            (
+                Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
+                Opcode::ConsumeSet(InstConsumeSet::new(CharacterRangeSet::Range('a'..'z'))),
+            ),
+            (
+                None,
+                Opcode::ConsumeSet(InstConsumeSet::new(CharacterRangeSet::Range('x'..'z'))),
+            ),
+            (
+                Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
+                Opcode::ConsumeSet(InstConsumeSet::new(CharacterRangeSet::Explicit(vec![
+                    'a', 'b',
+                ]))),
+            ),
+            (
+                None,
+                Opcode::ConsumeSet(InstConsumeSet::new(CharacterRangeSet::Explicit(vec![
+                    'x', 'y', 'z',
+                ]))),
+            ),
+        ];
+
+        let input = "aab";
+
+        for (expected_res, consume_set_inst) in progs {
+            let prog = Instructions::new(vec![
+                Opcode::StartSave(InstStartSave::new(0)),
+                consume_set_inst,
+                Opcode::EndSave(InstEndSave::new(0)),
+                Opcode::Match,
+            ]);
             let res = run::<1>(&prog.program, input);
             assert_eq!(expected_res, res)
         }
