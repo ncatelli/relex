@@ -253,6 +253,7 @@ impl Display for Instruction {
 pub enum Opcode {
     Any,
     Consume(InstConsume),
+    ConsumeSet(Box<InstConsumeSet>),
     Split(InstSplit),
     Jmp(InstJmp),
     StartSave(InstStartSave),
@@ -263,13 +264,14 @@ pub enum Opcode {
 impl Display for Opcode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Opcode::Match => std::fmt::Display::fmt(&InstMatch, f),
-            Opcode::Consume(i) => std::fmt::Display::fmt(&i, f),
-            Opcode::Split(i) => std::fmt::Display::fmt(&i, f),
-            Opcode::Any => std::fmt::Display::fmt(&InstAny::new(), f),
-            Opcode::Jmp(i) => std::fmt::Display::fmt(&i, f),
-            Opcode::StartSave(i) => std::fmt::Display::fmt(&i, f),
-            Opcode::EndSave(i) => std::fmt::Display::fmt(&i, f),
+            Opcode::Match => Display::fmt(&InstMatch, f),
+            Opcode::Consume(i) => Display::fmt(&i, f),
+            Opcode::ConsumeSet(i) => Display::fmt(&i, f),
+            Opcode::Split(i) => Display::fmt(&i, f),
+            Opcode::Any => Display::fmt(&InstAny::new(), f),
+            Opcode::Jmp(i) => Display::fmt(&i, f),
+            Opcode::StartSave(i) => Display::fmt(&i, f),
+            Opcode::EndSave(i) => Display::fmt(&i, f),
         }
     }
 }
@@ -319,6 +321,62 @@ impl InstConsume {
 impl Display for InstConsume {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Consume: {:?}", self.value)
+    }
+}
+
+/// Represents a type that can be used as a comparative character set.
+trait CharacterRangeSetVerifiable {
+    fn in_set(&self, value: char) -> bool;
+}
+
+impl CharacterRangeSetVerifiable for std::ops::Range<char> {
+    fn in_set(&self, value: char) -> bool {
+        self.contains(&value)
+    }
+}
+
+impl CharacterRangeSetVerifiable for Vec<char> {
+    fn in_set(&self, value: char) -> bool {
+        self.contains(&value)
+    }
+}
+
+/// Represents a runtime dispatchable type for character range sets.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CharacterRangeSet {
+    /// Represents a range of values i.e. `0-9`, `a-z`, `A-Z` etc...
+    Range(std::ops::Range<char>),
+    /// Represents an explicitly defined set of values. i.e. `[a,b,z]`, `[1,2,7]`
+    Explicit(Vec<char>),
+}
+
+impl CharacterRangeSetVerifiable for CharacterRangeSet {
+    fn in_set(&self, value: char) -> bool {
+        match self {
+            CharacterRangeSet::Range(r) => r.in_set(value),
+            CharacterRangeSet::Explicit(v) => v.in_set(value),
+        }
+    }
+}
+
+/// ConsumeSet provides richer matching patterns than the more constrained
+/// Consume or Any instructions allowing for the matching from a set of
+/// characters. This functions as a brevity tool to prevent long alternations.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InstConsumeSet {
+    set: CharacterRangeSet,
+}
+
+impl InstConsumeSet {
+    #[must_use]
+    pub fn new(set: CharacterRangeSet) -> Self {
+        Self { set }
+    }
+}
+
+impl Display for InstConsumeSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ConsumeSet: {{{:?}}}", self.set)
     }
 }
 
@@ -783,6 +841,13 @@ mod tests {
             let res = run::<1>(&prog.program, input);
             assert_eq!((case_id, Some(expected_res)), (case_id, res));
         }
+    }
+
+    #[test]
+    fn should_retain_a_fixed_opcode_size() {
+        use core::mem::size_of;
+
+        assert_eq!(24, size_of::<Opcode>())
     }
 
     #[test]
