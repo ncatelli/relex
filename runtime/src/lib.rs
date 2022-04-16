@@ -351,9 +351,9 @@ impl<CRSV: CharacterRangeSetVerifiable> CharacterRangeSetVerifiable for Vec<CRSV
     }
 }
 
-/// Represents a runtime dispatchable type for character range sets.
+/// Represents a runtime dispatchable type for character sets.
 #[derive(Debug, Clone, PartialEq)]
-pub enum CharacterRangeSet {
+pub enum CharacterSet {
     /// Represents a range of values i.e. `0-9`, `a-z`, `A-Z`, etc...
     Range(std::ops::RangeInclusive<char>),
     /// Represents an explicitly defined set of values. i.e. `[a,b,z]`, `[1,2,7]`
@@ -362,14 +362,21 @@ pub enum CharacterRangeSet {
     Ranges(Vec<std::ops::RangeInclusive<char>>),
 }
 
-impl CharacterRangeSetVerifiable for CharacterRangeSet {
+impl CharacterRangeSetVerifiable for CharacterSet {
     fn in_set(&self, value: char) -> bool {
         match self {
-            CharacterRangeSet::Range(r) => r.in_set(value),
-            CharacterRangeSet::Explicit(v) => v.in_set(value),
-            CharacterRangeSet::Ranges(ranges) => ranges.in_set(value),
+            CharacterSet::Range(r) => r.in_set(value),
+            CharacterSet::Explicit(v) => v.in_set(value),
+            CharacterSet::Ranges(ranges) => ranges.in_set(value),
         }
     }
+}
+
+/// Denotes whether a given set is inclusive or exclusive to a match.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SetInclusivity {
+    Inclusive,
+    Exclusive,
 }
 
 /// ConsumeSet provides richer matching patterns than the more constrained
@@ -377,13 +384,25 @@ impl CharacterRangeSetVerifiable for CharacterRangeSet {
 /// characters. This functions as a brevity tool to prevent long alternations.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InstConsumeSet {
-    set: Box<CharacterRangeSet>,
+    inclusivity: SetInclusivity,
+    set: Box<CharacterSet>,
 }
 
 impl InstConsumeSet {
     #[must_use]
-    pub fn new(set: CharacterRangeSet) -> Self {
-        Self { set: Box::new(set) }
+    pub fn inclusive(set: CharacterSet) -> Self {
+        Self {
+            inclusivity: SetInclusivity::Inclusive,
+            set: Box::new(set),
+        }
+    }
+
+    #[must_use]
+    pub fn exclusive(set: CharacterSet) -> Self {
+        Self {
+            inclusivity: SetInclusivity::Exclusive,
+            set: Box::new(set),
+        }
     }
 }
 
@@ -652,8 +671,11 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<
                     continue;
                 }
 
-                Some(Opcode::ConsumeSet(InstConsumeSet { set }))
-                    if next_char.map_or(false, |c| set.in_set(c)) =>
+                Some(Opcode::ConsumeSet(InstConsumeSet { inclusivity, set }))
+                    if next_char.map_or(false, |c| match inclusivity {
+                        SetInclusivity::Inclusive => set.in_set(c),
+                        SetInclusivity::Exclusive => set.not_in_set(c),
+                    }) =>
                 {
                     let thread_local_save_group =
                         if let SaveGroup::Allocated { slot_id } = save_group {
@@ -745,22 +767,42 @@ mod tests {
         let progs = vec![
             (
                 Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
-                Opcode::ConsumeSet(InstConsumeSet::new(CharacterRangeSet::Range('a'..='z'))),
+                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Range('a'..='z'))),
             ),
             (
                 None,
-                Opcode::ConsumeSet(InstConsumeSet::new(CharacterRangeSet::Range('x'..='z'))),
+                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Range('x'..='z'))),
             ),
             (
                 Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
-                Opcode::ConsumeSet(InstConsumeSet::new(CharacterRangeSet::Explicit(vec![
+                Opcode::ConsumeSet(InstConsumeSet::exclusive(CharacterSet::Range('x'..='z'))),
+            ),
+            (
+                None,
+                Opcode::ConsumeSet(InstConsumeSet::exclusive(CharacterSet::Range('a'..='z'))),
+            ),
+            (
+                Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
+                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Explicit(vec![
                     'a', 'b',
                 ]))),
             ),
             (
                 None,
-                Opcode::ConsumeSet(InstConsumeSet::new(CharacterRangeSet::Explicit(vec![
+                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Explicit(vec![
                     'x', 'y', 'z',
+                ]))),
+            ),
+            (
+                Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
+                Opcode::ConsumeSet(InstConsumeSet::exclusive(CharacterSet::Explicit(vec![
+                    'x', 'y', 'z',
+                ]))),
+            ),
+            (
+                None,
+                Opcode::ConsumeSet(InstConsumeSet::exclusive(CharacterSet::Explicit(vec![
+                    'a', 'b',
                 ]))),
             ),
         ];

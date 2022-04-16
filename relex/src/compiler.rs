@@ -1,6 +1,13 @@
 use super::ast;
 use relex_runtime::*;
 
+/// A representation of a AnyWordClass character class, in range format.
+const ANY_WORD_CLASS: [std::ops::RangeInclusive<char>; 4] =
+    ['a'..='z', 'A'..='Z', '0'..='9', '_'..='_'];
+
+/// A representation of a AnyDecimalDigitClass character class, in range format.
+const ANY_DECIMAL_DIGIT_CLASS: std::ops::RangeInclusive<char> = '0'..='9';
+
 /// A internal representation of the `relex_runtime::Opcode` type, with relative
 /// addressing.
 ///
@@ -245,18 +252,17 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => {
             let set = match cc {
                 ast::CharacterClass::AnyWord => {
-                    InstConsumeSet::new(CharacterRangeSet::Ranges(vec![
-                        'a'..='z',
-                        'A'..='Z',
-                        '0'..='9',
-                        '_'..='_',
-                    ]))
+                    InstConsumeSet::inclusive(CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()))
                 }
-                ast::CharacterClass::AnyWordInverted => todo!(),
+                ast::CharacterClass::AnyWordInverted => {
+                    InstConsumeSet::exclusive(CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()))
+                }
                 ast::CharacterClass::AnyDecimalDigit => {
-                    InstConsumeSet::new(CharacterRangeSet::Ranges(vec!['0'..='9']))
+                    InstConsumeSet::inclusive(CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS))
                 }
-                ast::CharacterClass::AnyDecimalDigitInverted => todo!(),
+                ast::CharacterClass::AnyDecimalDigitInverted => {
+                    InstConsumeSet::exclusive(CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS))
+                }
             };
 
             Ok(vec![RelativeOpcode::ConsumeSet(set)])
@@ -510,7 +516,7 @@ mod tests {
 
         assert_eq!(
             Ok(Instructions::new(vec![
-                Opcode::ConsumeSet(InstConsumeSet::new(CharacterRangeSet::Ranges(vec![
+                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Ranges(vec![
                     'a'..='z',
                     'A'..='Z',
                     '0'..='9',
@@ -532,9 +538,7 @@ mod tests {
 
         assert_eq!(
             Ok(Instructions::new(vec![
-                Opcode::ConsumeSet(InstConsumeSet::new(CharacterRangeSet::Ranges(vec![
-                    '0'..='9',
-                ]))),
+                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Range('0'..='9'))),
                 Opcode::Match,
             ])),
             compile(regex_ast)
