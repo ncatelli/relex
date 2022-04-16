@@ -18,7 +18,7 @@ fn pad_input_to_length_with(prefix: &str, suffix: &str, pad_str: &str, len: usiz
 }
 
 pub fn exponential_input_size_comparison(c: &mut Criterion) {
-    let mut group = c.benchmark_group("exponential input length comparison");
+    let mut group = c.benchmark_group("exponential pattern length compilation comparison");
     let pad = "ab";
 
     (1..10)

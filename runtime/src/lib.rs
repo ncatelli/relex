@@ -253,6 +253,7 @@ impl Display for Instruction {
 pub enum Opcode {
     Any,
     Consume(InstConsume),
+    ConsumeSet(InstConsumeSet),
     Split(InstSplit),
     Jmp(InstJmp),
     StartSave(InstStartSave),
@@ -263,13 +264,14 @@ pub enum Opcode {
 impl Display for Opcode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Opcode::Match => std::fmt::Display::fmt(&InstMatch, f),
-            Opcode::Consume(i) => std::fmt::Display::fmt(&i, f),
-            Opcode::Split(i) => std::fmt::Display::fmt(&i, f),
-            Opcode::Any => std::fmt::Display::fmt(&InstAny::new(), f),
-            Opcode::Jmp(i) => std::fmt::Display::fmt(&i, f),
-            Opcode::StartSave(i) => std::fmt::Display::fmt(&i, f),
-            Opcode::EndSave(i) => std::fmt::Display::fmt(&i, f),
+            Opcode::Match => Display::fmt(&InstMatch, f),
+            Opcode::Consume(i) => Display::fmt(&i, f),
+            Opcode::ConsumeSet(i) => Display::fmt(&i, f),
+            Opcode::Split(i) => Display::fmt(&i, f),
+            Opcode::Any => Display::fmt(&InstAny::new(), f),
+            Opcode::Jmp(i) => Display::fmt(&i, f),
+            Opcode::StartSave(i) => Display::fmt(&i, f),
+            Opcode::EndSave(i) => Display::fmt(&i, f),
         }
     }
 }
@@ -319,6 +321,94 @@ impl InstConsume {
 impl Display for InstConsume {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Consume: {:?}", self.value)
+    }
+}
+
+/// Represents a type that can be used as a comparative character set.
+trait CharacterRangeSetVerifiable {
+    fn in_set(&self, value: char) -> bool;
+
+    fn not_in_set(&self, value: char) -> bool {
+        !self.in_set(value)
+    }
+}
+
+impl CharacterRangeSetVerifiable for std::ops::RangeInclusive<char> {
+    fn in_set(&self, value: char) -> bool {
+        self.contains(&value)
+    }
+}
+
+impl CharacterRangeSetVerifiable for char {
+    fn in_set(&self, value: char) -> bool {
+        *self == value
+    }
+}
+
+impl<CRSV: CharacterRangeSetVerifiable> CharacterRangeSetVerifiable for Vec<CRSV> {
+    fn in_set(&self, value: char) -> bool {
+        self.iter().any(|r| r.in_set(value))
+    }
+}
+
+/// Represents a runtime dispatchable type for character sets.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CharacterSet {
+    /// Represents a range of values i.e. `0-9`, `a-z`, `A-Z`, etc...
+    Range(std::ops::RangeInclusive<char>),
+    /// Represents an explicitly defined set of values. i.e. `[a,b,z]`, `[1,2,7]`
+    Explicit(Vec<char>),
+    /// Represents a set of range of values i.e. `[0-9a-zA-Z]`,  etc...
+    Ranges(Vec<std::ops::RangeInclusive<char>>),
+}
+
+impl CharacterRangeSetVerifiable for CharacterSet {
+    fn in_set(&self, value: char) -> bool {
+        match self {
+            CharacterSet::Range(r) => r.in_set(value),
+            CharacterSet::Explicit(v) => v.in_set(value),
+            CharacterSet::Ranges(ranges) => ranges.in_set(value),
+        }
+    }
+}
+
+/// Denotes whether a given set is inclusive or exclusive to a match.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SetInclusivity {
+    Inclusive,
+    Exclusive,
+}
+
+/// ConsumeSet provides richer matching patterns than the more constrained
+/// Consume or Any instructions allowing for the matching from a set of
+/// characters. This functions as a brevity tool to prevent long alternations.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InstConsumeSet {
+    inclusivity: SetInclusivity,
+    set: Box<CharacterSet>,
+}
+
+impl InstConsumeSet {
+    #[must_use]
+    pub fn inclusive(set: CharacterSet) -> Self {
+        Self {
+            inclusivity: SetInclusivity::Inclusive,
+            set: Box::new(set),
+        }
+    }
+
+    #[must_use]
+    pub fn exclusive(set: CharacterSet) -> Self {
+        Self {
+            inclusivity: SetInclusivity::Exclusive,
+            set: Box::new(set),
+        }
+    }
+}
+
+impl Display for InstConsumeSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ConsumeSet: {{{:?}}}", self.set.as_ref())
     }
 }
 
@@ -558,6 +648,7 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<
                         input,
                     );
                 }
+
                 Some(Opcode::Consume(InstConsume { value })) if Some(*value) == next_char => {
                     let thread_local_save_group =
                         if let SaveGroup::Allocated { slot_id } = save_group {
@@ -579,6 +670,33 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<
                 Some(Opcode::Consume(_)) => {
                     continue;
                 }
+
+                Some(Opcode::ConsumeSet(InstConsumeSet { inclusivity, set }))
+                    if next_char.map_or(false, |c| match inclusivity {
+                        SetInclusivity::Inclusive => set.in_set(c),
+                        SetInclusivity::Exclusive => set.not_in_set(c),
+                    }) =>
+                {
+                    let thread_local_save_group =
+                        if let SaveGroup::Allocated { slot_id } = save_group {
+                            SaveGroup::open(slot_id, input_idx)
+                        } else {
+                            save_group
+                        };
+
+                    next_thread_list = add_thread(
+                        program,
+                        &mut sub,
+                        next_thread_list,
+                        Thread::new(thread_local_save_group, default_next_inst_idx),
+                        input_idx + 1,
+                        input,
+                    );
+                }
+                Some(Opcode::ConsumeSet(_)) => {
+                    continue;
+                }
+
                 Some(Opcode::Match) => {
                     matches += 1;
                     continue;
@@ -639,6 +757,65 @@ mod tests {
         let input = "aab";
 
         for (expected_res, prog) in progs {
+            let res = run::<1>(&prog.program, input);
+            assert_eq!(expected_res, res)
+        }
+    }
+
+    #[test]
+    fn should_evaluate_set_match_expression() {
+        let progs = vec![
+            (
+                Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
+                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Range('a'..='z'))),
+            ),
+            (
+                None,
+                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Range('x'..='z'))),
+            ),
+            (
+                Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
+                Opcode::ConsumeSet(InstConsumeSet::exclusive(CharacterSet::Range('x'..='z'))),
+            ),
+            (
+                None,
+                Opcode::ConsumeSet(InstConsumeSet::exclusive(CharacterSet::Range('a'..='z'))),
+            ),
+            (
+                Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
+                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Explicit(vec![
+                    'a', 'b',
+                ]))),
+            ),
+            (
+                None,
+                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Explicit(vec![
+                    'x', 'y', 'z',
+                ]))),
+            ),
+            (
+                Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
+                Opcode::ConsumeSet(InstConsumeSet::exclusive(CharacterSet::Explicit(vec![
+                    'x', 'y', 'z',
+                ]))),
+            ),
+            (
+                None,
+                Opcode::ConsumeSet(InstConsumeSet::exclusive(CharacterSet::Explicit(vec![
+                    'a', 'b',
+                ]))),
+            ),
+        ];
+
+        let input = "aab";
+
+        for (expected_res, consume_set_inst) in progs {
+            let prog = Instructions::new(vec![
+                Opcode::StartSave(InstStartSave::new(0)),
+                consume_set_inst,
+                Opcode::EndSave(InstEndSave::new(0)),
+                Opcode::Match,
+            ]);
             let res = run::<1>(&prog.program, input);
             assert_eq!(expected_res, res)
         }
@@ -783,6 +960,13 @@ mod tests {
             let res = run::<1>(&prog.program, input);
             assert_eq!((case_id, Some(expected_res)), (case_id, res));
         }
+    }
+
+    #[test]
+    fn should_retain_a_fixed_opcode_size() {
+        use core::mem::size_of;
+
+        assert_eq!(24, size_of::<Opcode>())
     }
 
     #[test]

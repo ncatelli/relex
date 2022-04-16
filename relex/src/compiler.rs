@@ -1,6 +1,13 @@
 use super::ast;
 use relex_runtime::*;
 
+/// A representation of a AnyWordClass character class, in range format.
+const ANY_WORD_CLASS: [std::ops::RangeInclusive<char>; 4] =
+    ['a'..='z', 'A'..='Z', '0'..='9', '_'..='_'];
+
+/// A representation of a AnyDecimalDigitClass character class, in range format.
+const ANY_DECIMAL_DIGIT_CLASS: std::ops::RangeInclusive<char> = '0'..='9';
+
 /// A internal representation of the `relex_runtime::Opcode` type, with relative
 /// addressing.
 ///
@@ -12,6 +19,7 @@ use relex_runtime::*;
 enum RelativeOpcode {
     Any,
     Consume(char),
+    ConsumeSet(InstConsumeSet),
     Split(isize, isize),
     Jmp(isize),
     StartSave(usize),
@@ -20,10 +28,11 @@ enum RelativeOpcode {
 }
 
 impl RelativeOpcode {
-    fn to_opcode_with_index(&self, idx: usize) -> Option<Opcode> {
+    fn into_opcode_with_index(self, idx: usize) -> Option<Opcode> {
         match self {
             RelativeOpcode::Any => Some(Opcode::Any),
-            RelativeOpcode::Consume(c) => Some(Opcode::Consume(InstConsume::new(*c))),
+            RelativeOpcode::Consume(c) => Some(Opcode::Consume(InstConsume::new(c))),
+            RelativeOpcode::ConsumeSet(i) => Some(Opcode::ConsumeSet(i)),
             RelativeOpcode::Split(rel_x, rel_y) => {
                 let signed_idx = idx as isize;
                 let x: usize = (signed_idx + rel_x).try_into().ok()?;
@@ -40,14 +49,14 @@ impl RelativeOpcode {
 
                 Some(Opcode::Jmp(InstJmp::new(InstIndex::from(jmp_to))))
             }
-            RelativeOpcode::StartSave(slot) => Some(Opcode::StartSave(InstStartSave::new(*slot))),
-            RelativeOpcode::EndSave(slot) => Some(Opcode::EndSave(InstEndSave::new(*slot))),
+            RelativeOpcode::StartSave(slot) => Some(Opcode::StartSave(InstStartSave::new(slot))),
+            RelativeOpcode::EndSave(slot) => Some(Opcode::EndSave(InstEndSave::new(slot))),
             RelativeOpcode::Match => Some(Opcode::Match),
         }
     }
 
-    fn to_opcode_with_index_unchecked(&self, idx: usize) -> Opcode {
-        self.to_opcode_with_index(idx).unwrap()
+    fn into_opcode_with_index_unchecked(self, idx: usize) -> Opcode {
+        self.into_opcode_with_index(idx).unwrap()
     }
 }
 
@@ -82,7 +91,7 @@ pub fn compile(regex_ast: ast::Regex) -> Result<Instructions, String> {
             rel_ops
                 .into_iter()
                 .enumerate()
-                .map(|(idx, op)| op.to_opcode_with_index_unchecked(idx))
+                .map(|(idx, op)| op.into_opcode_with_index_unchecked(idx))
                 .collect::<Opcodes>()
         })
         .map(Instructions::new)
@@ -158,7 +167,10 @@ macro_rules! generate_range_quantifier_block {
 }
 
 fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
-    use ast::{Char, Integer, Match, MatchCharacter, MatchItem, Quantifier, QuantifierType};
+    use ast::{
+        Char, Integer, Match, MatchCharacter, MatchCharacterClass, MatchItem, Quantifier,
+        QuantifierType,
+    };
 
     match m {
         // match exact
@@ -228,19 +240,41 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
                 }),
         } => generate_range_quantifier_block!(lazy, lower, upper, RelativeOpcode::Consume(c)),
 
-        // Catch-all todo
-        Match::WithQuantifier {
-            item: _,
-            quantifier: _,
-        } => todo!(),
         Match::WithoutQuantifier {
             item: MatchItem::MatchAnyCharacter,
         } => Ok(vec![RelativeOpcode::Any]),
         Match::WithoutQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
         } => Ok(vec![RelativeOpcode::Consume(c)]),
+
         Match::WithoutQuantifier {
-            item: MatchItem::MatchCharacterClass(_mcc),
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(cc)),
+        } => {
+            let set = match cc {
+                ast::CharacterClass::AnyWord => {
+                    InstConsumeSet::inclusive(CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()))
+                }
+                ast::CharacterClass::AnyWordInverted => {
+                    InstConsumeSet::exclusive(CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()))
+                }
+                ast::CharacterClass::AnyDecimalDigit => {
+                    InstConsumeSet::inclusive(CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS))
+                }
+                ast::CharacterClass::AnyDecimalDigitInverted => {
+                    InstConsumeSet::exclusive(CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS))
+                }
+            };
+
+            Ok(vec![RelativeOpcode::ConsumeSet(set)])
+        }
+
+        // Catch-all todo
+        Match::WithQuantifier {
+            item: _,
+            quantifier: _,
+        } => todo!(),
+        Match::WithoutQuantifier {
+            item: MatchItem::MatchCharacterClass(_),
         } => todo!(),
     }
 }
@@ -461,6 +495,51 @@ mod tests {
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Match
+            ])),
+            compile(regex_ast)
+        );
+    }
+
+    #[test]
+    fn should_compile_character_classes() {
+        use ast::*;
+        use relex_runtime::*;
+
+        // equivalent to `^\w`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(
+                    CharacterClass::AnyWord,
+                )),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Ranges(vec![
+                    'a'..='z',
+                    'A'..='Z',
+                    '0'..='9',
+                    '_'..='_',
+                ]))),
+                Opcode::Match,
+            ])),
+            compile(regex_ast)
+        );
+
+        // equivalent to `^\d`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(
+                    CharacterClass::AnyDecimalDigit,
+                )),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Range('0'..='9'))),
+                Opcode::Match,
             ])),
             compile(regex_ast)
         );
