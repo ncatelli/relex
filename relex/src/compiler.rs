@@ -12,6 +12,7 @@ use relex_runtime::*;
 enum RelativeOpcode {
     Any,
     Consume(char),
+    ConsumeSet(InstConsumeSet),
     Split(isize, isize),
     Jmp(isize),
     StartSave(usize),
@@ -20,10 +21,11 @@ enum RelativeOpcode {
 }
 
 impl RelativeOpcode {
-    fn to_opcode_with_index(&self, idx: usize) -> Option<Opcode> {
+    fn into_opcode_with_index(self, idx: usize) -> Option<Opcode> {
         match self {
             RelativeOpcode::Any => Some(Opcode::Any),
-            RelativeOpcode::Consume(c) => Some(Opcode::Consume(InstConsume::new(*c))),
+            RelativeOpcode::Consume(c) => Some(Opcode::Consume(InstConsume::new(c))),
+            RelativeOpcode::ConsumeSet(i) => Some(Opcode::ConsumeSet(i)),
             RelativeOpcode::Split(rel_x, rel_y) => {
                 let signed_idx = idx as isize;
                 let x: usize = (signed_idx + rel_x).try_into().ok()?;
@@ -40,14 +42,14 @@ impl RelativeOpcode {
 
                 Some(Opcode::Jmp(InstJmp::new(InstIndex::from(jmp_to))))
             }
-            RelativeOpcode::StartSave(slot) => Some(Opcode::StartSave(InstStartSave::new(*slot))),
-            RelativeOpcode::EndSave(slot) => Some(Opcode::EndSave(InstEndSave::new(*slot))),
+            RelativeOpcode::StartSave(slot) => Some(Opcode::StartSave(InstStartSave::new(slot))),
+            RelativeOpcode::EndSave(slot) => Some(Opcode::EndSave(InstEndSave::new(slot))),
             RelativeOpcode::Match => Some(Opcode::Match),
         }
     }
 
-    fn to_opcode_with_index_unchecked(&self, idx: usize) -> Opcode {
-        self.to_opcode_with_index(idx).unwrap()
+    fn into_opcode_with_index_unchecked(self, idx: usize) -> Opcode {
+        self.into_opcode_with_index(idx).unwrap()
     }
 }
 
@@ -82,7 +84,7 @@ pub fn compile(regex_ast: ast::Regex) -> Result<Instructions, String> {
             rel_ops
                 .into_iter()
                 .enumerate()
-                .map(|(idx, op)| op.to_opcode_with_index_unchecked(idx))
+                .map(|(idx, op)| op.into_opcode_with_index_unchecked(idx))
                 .collect::<Opcodes>()
         })
         .map(Instructions::new)
