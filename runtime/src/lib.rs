@@ -327,27 +327,39 @@ impl Display for InstConsume {
 /// Represents a type that can be used as a comparative character set.
 trait CharacterRangeSetVerifiable {
     fn in_set(&self, value: char) -> bool;
+
+    fn not_in_set(&self, value: char) -> bool {
+        !self.in_set(value)
+    }
 }
 
-impl CharacterRangeSetVerifiable for std::ops::Range<char> {
+impl CharacterRangeSetVerifiable for std::ops::RangeInclusive<char> {
     fn in_set(&self, value: char) -> bool {
         self.contains(&value)
     }
 }
 
-impl CharacterRangeSetVerifiable for Vec<char> {
+impl CharacterRangeSetVerifiable for char {
     fn in_set(&self, value: char) -> bool {
-        self.contains(&value)
+        *self == value
+    }
+}
+
+impl<CRSV: CharacterRangeSetVerifiable> CharacterRangeSetVerifiable for Vec<CRSV> {
+    fn in_set(&self, value: char) -> bool {
+        self.iter().any(|r| r.in_set(value))
     }
 }
 
 /// Represents a runtime dispatchable type for character range sets.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CharacterRangeSet {
-    /// Represents a range of values i.e. `0-9`, `a-z`, `A-Z` etc...
-    Range(std::ops::Range<char>),
+    /// Represents a range of values i.e. `0-9`, `a-z`, `A-Z`, etc...
+    Range(std::ops::RangeInclusive<char>),
     /// Represents an explicitly defined set of values. i.e. `[a,b,z]`, `[1,2,7]`
     Explicit(Vec<char>),
+    /// Represents a set of range of values i.e. `[0-9a-zA-Z]`,  etc...
+    Ranges(Vec<std::ops::RangeInclusive<char>>),
 }
 
 impl CharacterRangeSetVerifiable for CharacterRangeSet {
@@ -355,6 +367,7 @@ impl CharacterRangeSetVerifiable for CharacterRangeSet {
         match self {
             CharacterRangeSet::Range(r) => r.in_set(value),
             CharacterRangeSet::Explicit(v) => v.in_set(value),
+            CharacterRangeSet::Ranges(ranges) => ranges.in_set(value),
         }
     }
 }
@@ -732,11 +745,11 @@ mod tests {
         let progs = vec![
             (
                 Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
-                Opcode::ConsumeSet(InstConsumeSet::new(CharacterRangeSet::Range('a'..'z'))),
+                Opcode::ConsumeSet(InstConsumeSet::new(CharacterRangeSet::Range('a'..='z'))),
             ),
             (
                 None,
-                Opcode::ConsumeSet(InstConsumeSet::new(CharacterRangeSet::Range('x'..'z'))),
+                Opcode::ConsumeSet(InstConsumeSet::new(CharacterRangeSet::Range('x'..='z'))),
             ),
             (
                 Some(vec![SaveGroupSlot::complete(0, 0, 1)]),

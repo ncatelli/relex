@@ -160,7 +160,10 @@ macro_rules! generate_range_quantifier_block {
 }
 
 fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
-    use ast::{Char, Integer, Match, MatchCharacter, MatchItem, Quantifier, QuantifierType};
+    use ast::{
+        Char, Integer, Match, MatchCharacter, MatchCharacterClass, MatchItem, Quantifier,
+        QuantifierType,
+    };
 
     match m {
         // match exact
@@ -230,19 +233,42 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
                 }),
         } => generate_range_quantifier_block!(lazy, lower, upper, RelativeOpcode::Consume(c)),
 
-        // Catch-all todo
-        Match::WithQuantifier {
-            item: _,
-            quantifier: _,
-        } => todo!(),
         Match::WithoutQuantifier {
             item: MatchItem::MatchAnyCharacter,
         } => Ok(vec![RelativeOpcode::Any]),
         Match::WithoutQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
         } => Ok(vec![RelativeOpcode::Consume(c)]),
+
         Match::WithoutQuantifier {
-            item: MatchItem::MatchCharacterClass(_mcc),
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(cc)),
+        } => {
+            let set = match cc {
+                ast::CharacterClass::AnyWord => {
+                    InstConsumeSet::new(CharacterRangeSet::Ranges(vec![
+                        'a'..='z',
+                        'A'..='Z',
+                        '0'..='9',
+                        '_'..='_',
+                    ]))
+                }
+                ast::CharacterClass::AnyWordInverted => todo!(),
+                ast::CharacterClass::AnyDecimalDigit => {
+                    InstConsumeSet::new(CharacterRangeSet::Ranges(vec!['0'..='9']))
+                }
+                ast::CharacterClass::AnyDecimalDigitInverted => todo!(),
+            };
+
+            Ok(vec![RelativeOpcode::ConsumeSet(set)])
+        }
+
+        // Catch-all todo
+        Match::WithQuantifier {
+            item: _,
+            quantifier: _,
+        } => todo!(),
+        Match::WithoutQuantifier {
+            item: MatchItem::MatchCharacterClass(_),
         } => todo!(),
     }
 }
@@ -463,6 +489,53 @@ mod tests {
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Match
+            ])),
+            compile(regex_ast)
+        );
+    }
+
+    #[test]
+    fn should_compile_character_classes() {
+        use ast::*;
+        use relex_runtime::*;
+
+        // equivalent to `^\w`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(
+                    CharacterClass::AnyWord,
+                )),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::ConsumeSet(InstConsumeSet::new(CharacterRangeSet::Ranges(vec![
+                    'a'..='z',
+                    'A'..='Z',
+                    '0'..='9',
+                    '_'..='_',
+                ]))),
+                Opcode::Match,
+            ])),
+            compile(regex_ast)
+        );
+
+        // equivalent to `^\d`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(
+                    CharacterClass::AnyDecimalDigit,
+                )),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::new(vec![
+                Opcode::ConsumeSet(InstConsumeSet::new(CharacterRangeSet::Ranges(vec![
+                    '0'..='9',
+                ]))),
+                Opcode::Match,
             ])),
             compile(regex_ast)
         );
