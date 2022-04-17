@@ -72,8 +72,8 @@ pub fn linear_input_size_comparison_against_set_match(c: &mut Criterion) {
             Opcode::Any,
             Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
             Opcode::StartSave(InstStartSave::new(0)),
-            Opcode::ConsumeSet(InstConsumeSet::inclusive(0)),
-            Opcode::ConsumeSet(InstConsumeSet::inclusive(0)),
+            Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+            Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
             Opcode::EndSave(InstEndSave::new(0)),
             Opcode::Match,
         ]);

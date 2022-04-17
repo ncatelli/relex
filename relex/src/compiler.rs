@@ -51,7 +51,7 @@ impl RelativeOpcode {
             RelativeOpcode::StartSave(slot) => Some(Opcode::StartSave(InstStartSave::new(slot))),
             RelativeOpcode::EndSave(slot) => Some(Opcode::EndSave(InstEndSave::new(slot))),
             RelativeOpcode::Match => Some(Opcode::Match),
-            RelativeOpcode::ConsumeSet(inclusivity, char_set) => {
+            RelativeOpcode::ConsumeSet(set_membership, char_set) => {
                 let found = sets.iter().position(|set| set == &char_set);
                 let set_idx = match found {
                     Some(set_idx) => set_idx,
@@ -63,8 +63,8 @@ impl RelativeOpcode {
                 };
 
                 Some(Opcode::ConsumeSet(InstConsumeSet {
-                    inclusivity,
-                    set_idx,
+                    membership: set_membership,
+                    idx: set_idx,
                 }))
             }
         }
@@ -270,7 +270,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         Match::WithoutQuantifier {
             item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(cc)),
         } => {
-            let (inclusivity, char_set) = match cc {
+            let (set_membership, char_set) = match cc {
                 ast::CharacterClass::AnyWord => (
                     SetMembership::Inclusive,
                     CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()),
@@ -289,7 +289,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
                 ),
             };
 
-            Ok(vec![RelativeOpcode::ConsumeSet(inclusivity, char_set)])
+            Ok(vec![RelativeOpcode::ConsumeSet(set_membership, char_set)])
         }
 
         // Catch-all todo
@@ -544,7 +544,7 @@ mod tests {
                     '_'..='_',
                 ])])
                 .with_opcodes(vec![
-                    Opcode::ConsumeSet(InstConsumeSet::inclusive(0)),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
                     Opcode::Match,
                 ])),
             compile(regex_ast)
@@ -563,7 +563,7 @@ mod tests {
             Ok(Instructions::default()
                 .with_sets(vec![CharacterSet::Range('0'..='9')])
                 .with_opcodes(vec![
-                    Opcode::ConsumeSet(InstConsumeSet::inclusive(0)),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
                     Opcode::Match,
                 ])),
             compile(regex_ast)

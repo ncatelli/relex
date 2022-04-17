@@ -402,7 +402,11 @@ impl CharacterRangeSetVerifiable for CharacterSet {
 /// Denotes whether a given set is inclusive or exclusive to a match.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetMembership {
+    /// States that a set is inclusive of a value, i.e. the value is a member of
+    /// the set.
     Inclusive,
+    /// States that a set is exclusive of a value, i.e. the value is not a
+    /// member of the set.
     Exclusive,
 }
 
@@ -411,31 +415,31 @@ pub enum SetMembership {
 /// characters. This functions as a brevity tool to prevent long alternations.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InstConsumeSet {
-    pub inclusivity: SetMembership,
-    pub set_idx: usize,
+    pub membership: SetMembership,
+    pub idx: usize,
 }
 
 impl InstConsumeSet {
     #[must_use]
-    pub fn inclusive(set_idx: usize) -> Self {
+    pub fn member_of(idx: usize) -> Self {
         Self {
-            inclusivity: SetMembership::Inclusive,
-            set_idx,
+            membership: SetMembership::Inclusive,
+            idx,
         }
     }
 
     #[must_use]
-    pub fn exclusive(set_idx: usize) -> Self {
+    pub fn exclusive(idx: usize) -> Self {
         Self {
-            inclusivity: SetMembership::Exclusive,
-            set_idx,
+            membership: SetMembership::Exclusive,
+            idx,
         }
     }
 }
 
 impl Display for InstConsumeSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ConsumeSet: {{{:04}}}", self.set_idx)
+        write!(f, "ConsumeSet: {{{:04}}}", self.idx)
     }
 }
 
@@ -702,8 +706,8 @@ pub fn run<const SG: usize>(program: &Instructions, input: &str) -> Option<Vec<S
                 }
 
                 Some(Opcode::ConsumeSet(InstConsumeSet {
-                    inclusivity,
-                    set_idx,
+                    membership: inclusivity,
+                    idx: set_idx,
                 })) if next_char.map_or(false, |c| match inclusivity {
                     SetMembership::Inclusive => {
                         sets.get(*set_idx).map_or(false, |set| set.in_set(c))
@@ -803,9 +807,9 @@ mod tests {
         let progs = vec![
             (
                 Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
-                Opcode::ConsumeSet(InstConsumeSet::inclusive(2)),
+                Opcode::ConsumeSet(InstConsumeSet::member_of(2)),
             ),
-            (None, Opcode::ConsumeSet(InstConsumeSet::inclusive(3))),
+            (None, Opcode::ConsumeSet(InstConsumeSet::member_of(3))),
             (
                 Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
                 Opcode::ConsumeSet(InstConsumeSet::exclusive(3)),
@@ -813,9 +817,9 @@ mod tests {
             (None, Opcode::ConsumeSet(InstConsumeSet::exclusive(2))),
             (
                 Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
-                Opcode::ConsumeSet(InstConsumeSet::inclusive(0)),
+                Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
             ),
-            (None, Opcode::ConsumeSet(InstConsumeSet::inclusive(1))),
+            (None, Opcode::ConsumeSet(InstConsumeSet::member_of(1))),
             (
                 Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
                 Opcode::ConsumeSet(InstConsumeSet::exclusive(1)),
