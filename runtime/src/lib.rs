@@ -135,20 +135,47 @@ impl Default for Threads {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Default, Debug, PartialEq)]
 pub struct Instructions {
+    sets: Vec<CharacterSet>,
     program: Vec<Instruction>,
 }
 
 impl Instructions {
     #[must_use]
-    pub fn new(program: Vec<Opcode>) -> Self {
+    pub fn new(sets: Vec<CharacterSet>, program: Vec<Opcode>) -> Self {
         Self {
+            sets,
             program: program
                 .into_iter()
                 .enumerate()
                 .map(|(id, opcode)| Instruction::new(id, opcode))
                 .collect(),
+        }
+    }
+
+    pub fn with_opcodes(self, program: Vec<Opcode>) -> Self {
+        Self {
+            sets: self.sets,
+            program: program
+                .into_iter()
+                .enumerate()
+                .map(|(id, opcode)| Instruction::new(id, opcode))
+                .collect(),
+        }
+    }
+
+    pub fn with_instructions(self, program: Vec<Instruction>) -> Self {
+        Self {
+            sets: self.sets,
+            program,
+        }
+    }
+
+    pub fn with_sets(self, sets: Vec<CharacterSet>) -> Self {
+        Self {
+            sets,
+            program: self.program,
         }
     }
 
@@ -374,8 +401,12 @@ impl CharacterRangeSetVerifiable for CharacterSet {
 
 /// Denotes whether a given set is inclusive or exclusive to a match.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum SetInclusivity {
+pub enum SetMembership {
+    /// States that a set is inclusive of a value, i.e. the value is a member of
+    /// the set.
     Inclusive,
+    /// States that a set is exclusive of a value, i.e. the value is not a
+    /// member of the set.
     Exclusive,
 }
 
@@ -384,31 +415,31 @@ enum SetInclusivity {
 /// characters. This functions as a brevity tool to prevent long alternations.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InstConsumeSet {
-    inclusivity: SetInclusivity,
-    set: Box<CharacterSet>,
+    pub membership: SetMembership,
+    pub idx: usize,
 }
 
 impl InstConsumeSet {
     #[must_use]
-    pub fn inclusive(set: CharacterSet) -> Self {
+    pub fn member_of(idx: usize) -> Self {
         Self {
-            inclusivity: SetInclusivity::Inclusive,
-            set: Box::new(set),
+            membership: SetMembership::Inclusive,
+            idx,
         }
     }
 
     #[must_use]
-    pub fn exclusive(set: CharacterSet) -> Self {
+    pub fn exclusive(idx: usize) -> Self {
         Self {
-            inclusivity: SetInclusivity::Exclusive,
-            set: Box::new(set),
+            membership: SetMembership::Exclusive,
+            idx,
         }
     }
 }
 
 impl Display for InstConsumeSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ConsumeSet: {{{:?}}}", self.set.as_ref())
+        write!(f, "ConsumeSet: {{{:04}}}", self.idx)
     }
 }
 
@@ -596,11 +627,14 @@ fn add_thread(
 /// Executes a given program against an input. If a match is found an
 /// `Optional` vector of savegroups is returned. A match occurs if all
 /// savegroup slots are marked complete and pattern match is found.
-pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<SaveGroupSlot>> {
+pub fn run<const SG: usize>(program: &Instructions, input: &str) -> Option<Vec<SaveGroupSlot>> {
     use core::mem::swap;
 
+    let sets = &program.sets;
+    let instructions = program.as_ref();
+
     let input_len = input.len();
-    let program_len = program.len();
+    let program_len = instructions.len();
 
     let mut input_idx = 0;
     let mut current_thread_list = Threads::with_set_size(program_len);
@@ -611,7 +645,7 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<
     let mut sub = vec![SaveGroupSlot::None; SG];
 
     current_thread_list = add_thread(
-        program,
+        instructions,
         &mut sub,
         current_thread_list,
         Thread::new(SaveGroup::None, InstIndex::from(0)),
@@ -625,7 +659,7 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<
             let next_char = get_at(input, input_idx);
             let inst_idx = thread.inst;
             let default_next_inst_idx = inst_idx + 1;
-            let opcode = program.get(inst_idx.as_usize()).map(|i| &i.opcode);
+            let opcode = instructions.get(inst_idx.as_usize()).map(|i| &i.opcode);
 
             match opcode {
                 Some(Opcode::Any) if next_char.is_none() => {
@@ -640,7 +674,7 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<
                         };
 
                     next_thread_list = add_thread(
-                        program,
+                        instructions,
                         &mut sub,
                         next_thread_list,
                         Thread::new(thread_local_save_group, default_next_inst_idx),
@@ -658,7 +692,7 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<
                         };
 
                     next_thread_list = add_thread(
-                        program,
+                        instructions,
                         &mut sub,
                         next_thread_list,
                         Thread::new(thread_local_save_group, default_next_inst_idx),
@@ -671,11 +705,17 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<
                     continue;
                 }
 
-                Some(Opcode::ConsumeSet(InstConsumeSet { inclusivity, set }))
-                    if next_char.map_or(false, |c| match inclusivity {
-                        SetInclusivity::Inclusive => set.in_set(c),
-                        SetInclusivity::Exclusive => set.not_in_set(c),
-                    }) =>
+                Some(Opcode::ConsumeSet(InstConsumeSet {
+                    membership: inclusivity,
+                    idx: set_idx,
+                })) if next_char.map_or(false, |c| match inclusivity {
+                    SetMembership::Inclusive => {
+                        sets.get(*set_idx).map_or(false, |set| set.in_set(c))
+                    }
+                    SetMembership::Exclusive => {
+                        sets.get(*set_idx).map_or(false, |set| set.not_in_set(c))
+                    }
+                }) =>
                 {
                     let thread_local_save_group =
                         if let SaveGroup::Allocated { slot_id } = save_group {
@@ -685,7 +725,7 @@ pub fn run<const SG: usize>(program: &[Instruction], input: &str) -> Option<Vec<
                         };
 
                     next_thread_list = add_thread(
-                        program,
+                        instructions,
                         &mut sub,
                         next_thread_list,
                         Thread::new(thread_local_save_group, default_next_inst_idx),
@@ -736,7 +776,7 @@ mod tests {
         let progs = vec![
             (
                 Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
-                Instructions::new(vec![
+                Instructions::default().with_opcodes(vec![
                     Opcode::StartSave(InstStartSave::new(0)),
                     Opcode::Consume(InstConsume::new('a')),
                     Opcode::EndSave(InstEndSave::new(0)),
@@ -745,7 +785,7 @@ mod tests {
             ),
             (
                 None,
-                Instructions::new(vec![
+                Instructions::default().with_opcodes(vec![
                     Opcode::StartSave(InstStartSave::new(0)),
                     Opcode::Consume(InstConsume::new('b')),
                     Opcode::EndSave(InstEndSave::new(0)),
@@ -757,7 +797,7 @@ mod tests {
         let input = "aab";
 
         for (expected_res, prog) in progs {
-            let res = run::<1>(&prog.program, input);
+            let res = run::<1>(&prog, input);
             assert_eq!(expected_res, res)
         }
     }
@@ -767,56 +807,43 @@ mod tests {
         let progs = vec![
             (
                 Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
-                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Range('a'..='z'))),
+                Opcode::ConsumeSet(InstConsumeSet::member_of(2)),
             ),
-            (
-                None,
-                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Range('x'..='z'))),
-            ),
+            (None, Opcode::ConsumeSet(InstConsumeSet::member_of(3))),
             (
                 Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
-                Opcode::ConsumeSet(InstConsumeSet::exclusive(CharacterSet::Range('x'..='z'))),
+                Opcode::ConsumeSet(InstConsumeSet::exclusive(3)),
             ),
-            (
-                None,
-                Opcode::ConsumeSet(InstConsumeSet::exclusive(CharacterSet::Range('a'..='z'))),
-            ),
+            (None, Opcode::ConsumeSet(InstConsumeSet::exclusive(2))),
             (
                 Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
-                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Explicit(vec![
-                    'a', 'b',
-                ]))),
+                Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
             ),
-            (
-                None,
-                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Explicit(vec![
-                    'x', 'y', 'z',
-                ]))),
-            ),
+            (None, Opcode::ConsumeSet(InstConsumeSet::member_of(1))),
             (
                 Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
-                Opcode::ConsumeSet(InstConsumeSet::exclusive(CharacterSet::Explicit(vec![
-                    'x', 'y', 'z',
-                ]))),
+                Opcode::ConsumeSet(InstConsumeSet::exclusive(1)),
             ),
-            (
-                None,
-                Opcode::ConsumeSet(InstConsumeSet::exclusive(CharacterSet::Explicit(vec![
-                    'a', 'b',
-                ]))),
-            ),
+            (None, Opcode::ConsumeSet(InstConsumeSet::exclusive(0))),
         ];
 
         let input = "aab";
 
         for (expected_res, consume_set_inst) in progs {
-            let prog = Instructions::new(vec![
-                Opcode::StartSave(InstStartSave::new(0)),
-                consume_set_inst,
-                Opcode::EndSave(InstEndSave::new(0)),
-                Opcode::Match,
-            ]);
-            let res = run::<1>(&prog.program, input);
+            let prog = Instructions::default()
+                .with_sets(vec![
+                    CharacterSet::Explicit(vec!['a', 'b']),
+                    CharacterSet::Explicit(vec!['x', 'y', 'z']),
+                    CharacterSet::Range('a'..='z'),
+                    CharacterSet::Range('x'..='z'),
+                ])
+                .with_opcodes(vec![
+                    Opcode::StartSave(InstStartSave::new(0)),
+                    consume_set_inst,
+                    Opcode::EndSave(InstEndSave::new(0)),
+                    Opcode::Match,
+                ]);
+            let res = run::<1>(&prog, input);
             assert_eq!(expected_res, res)
         }
     }
@@ -826,7 +853,7 @@ mod tests {
         let progs = vec![
             (
                 vec![SaveGroupSlot::complete(0, 0, 2)],
-                Instructions::new(vec![
+                Instructions::default().with_opcodes(vec![
                     Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                     Opcode::Any,
                     Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
@@ -839,7 +866,7 @@ mod tests {
             ),
             (
                 vec![SaveGroupSlot::complete(0, 1, 3)],
-                Instructions::new(vec![
+                Instructions::default().with_opcodes(vec![
                     Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                     Opcode::Any,
                     Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
@@ -855,7 +882,7 @@ mod tests {
         let input = "aab";
 
         for (test_num, (expected_res, prog)) in progs.into_iter().enumerate() {
-            let res = run::<1>(&prog.program, input);
+            let res = run::<1>(&prog, input);
             assert_eq!((test_num, Some(expected_res)), (test_num, res))
         }
     }
@@ -867,7 +894,7 @@ mod tests {
                 SaveGroupSlot::complete(0, 0, 2),
                 SaveGroupSlot::complete(1, 1, 3),
             ],
-            Instructions::new(vec![
+            Instructions::default().with_opcodes(vec![
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                 Opcode::Any,
                 Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
@@ -887,7 +914,7 @@ mod tests {
 
         let input = "aab";
 
-        let res = run::<2>(&prog.program, input);
+        let res = run::<2>(&prog, input);
         assert_eq!(Some(expected_res), res)
     }
 
@@ -898,16 +925,19 @@ mod tests {
             (vec![SaveGroupSlot::complete(0, 0, 2)], "aaab"),
         ];
 
-        let prog = Instructions::new(vec![
-            Opcode::StartSave(InstStartSave::new(0)),
-            Opcode::Consume(InstConsume::new('a')),
-            Opcode::Consume(InstConsume::new('a')),
-            Opcode::EndSave(InstEndSave::new(0)),
-            Opcode::Match,
-        ]);
+        let prog = Instructions::new(
+            vec![],
+            vec![
+                Opcode::StartSave(InstStartSave::new(0)),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::EndSave(InstEndSave::new(0)),
+                Opcode::Match,
+            ],
+        );
 
         for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
-            let res = run::<1>(&prog.program, input);
+            let res = run::<1>(&prog, input);
             assert_eq!((case_id, Some(expected_res)), (case_id, res));
         }
     }
@@ -919,7 +949,7 @@ mod tests {
             (vec![SaveGroupSlot::complete(0, 0, 3)], "aaab"),
         ];
 
-        let prog = Instructions::new(vec![
+        let prog = Instructions::default().with_opcodes(vec![
             Opcode::StartSave(InstStartSave::new(0)),
             Opcode::Consume(InstConsume::new('a')),
             Opcode::Consume(InstConsume::new('a')),
@@ -931,7 +961,7 @@ mod tests {
         ]);
 
         for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
-            let res = run::<1>(&prog.program, input);
+            let res = run::<1>(&prog, input);
             assert_eq!((case_id, Some(expected_res)), (case_id, res));
         }
     }
@@ -944,7 +974,7 @@ mod tests {
             (vec![SaveGroupSlot::complete(0, 0, 4)], "aaaab"),
         ];
 
-        let prog = Instructions::new(vec![
+        let prog = Instructions::default().with_opcodes(vec![
             Opcode::StartSave(InstStartSave::new(0)),
             Opcode::Consume(InstConsume::new('a')),
             Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(4))),
@@ -957,7 +987,7 @@ mod tests {
         ]);
 
         for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
-            let res = run::<1>(&prog.program, input);
+            let res = run::<1>(&prog, input);
             assert_eq!((case_id, Some(expected_res)), (case_id, res));
         }
     }
@@ -971,7 +1001,7 @@ mod tests {
 
     #[test]
     fn should_print_test_instructions() {
-        let prog = Instructions::new(vec![
+        let prog = Instructions::default().with_opcodes(vec![
             Opcode::Consume(InstConsume::new('a')),
             Opcode::Consume(InstConsume::new('b')),
             Opcode::Match,
