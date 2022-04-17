@@ -21,7 +21,7 @@ pub fn linear_input_size_comparison(c: &mut Criterion) {
     let mut group = c.benchmark_group("exponential input length comparison");
     let input = "ab";
     let pad = "xy";
-    let prog = Instructions::new(vec![
+    let prog = Instructions::default().with_opcodes(vec![
         Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
         Opcode::Any,
         Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
@@ -44,7 +44,7 @@ pub fn linear_input_size_comparison(c: &mut Criterion) {
                     let expected_res = SaveGroupSlot::complete(0, *input_size - 2, *input_size);
 
                     b.iter(|| {
-                        let res = run::<1>(prog.as_ref(), input);
+                        let res = run::<1>(&prog, input);
                         assert_eq!(
                             Some(Some(&expected_res)),
                             res.as_ref().map(|slots| slots.get(0))
@@ -60,21 +60,23 @@ pub fn linear_input_size_comparison_against_set_match(c: &mut Criterion) {
     let input = "ab";
     let pad = "xy";
 
-    let match_set = ['a'..='z', 'A'..='Z', '0'..='9', '_'..='_'];
-    let prog = Instructions::new(vec![
-        Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
-        Opcode::Any,
-        Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
-        Opcode::StartSave(InstStartSave::new(0)),
-        Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Ranges(
-            match_set.to_vec(),
-        ))),
-        Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Ranges(
-            match_set.to_vec(),
-        ))),
-        Opcode::EndSave(InstEndSave::new(0)),
-        Opcode::Match,
-    ]);
+    let prog = Instructions::default()
+        .with_sets(vec![CharacterSet::Ranges(vec![
+            'a'..='z',
+            'A'..='Z',
+            '0'..='9',
+            '_'..='_',
+        ])])
+        .with_opcodes(vec![
+            Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
+            Opcode::Any,
+            Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+            Opcode::StartSave(InstStartSave::new(0)),
+            Opcode::ConsumeSet(InstConsumeSet::inclusive(0)),
+            Opcode::ConsumeSet(InstConsumeSet::inclusive(0)),
+            Opcode::EndSave(InstEndSave::new(0)),
+            Opcode::Match,
+        ]);
 
     (1..10)
         .map(|exponent| 2usize.pow(exponent))
@@ -91,7 +93,7 @@ pub fn linear_input_size_comparison_against_set_match(c: &mut Criterion) {
                     let expected_res = SaveGroupSlot::complete(0, *input_size - 2, *input_size);
 
                     b.iter(|| {
-                        let res = run::<1>(prog.as_ref(), input);
+                        let res = run::<1>(&prog, input);
                         assert_eq!(
                             Some(Some(&expected_res)),
                             res.as_ref().map(|slots| slots.get(0))

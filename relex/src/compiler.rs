@@ -19,7 +19,7 @@ const ANY_DECIMAL_DIGIT_CLASS: std::ops::RangeInclusive<char> = '0'..='9';
 enum RelativeOpcode {
     Any,
     Consume(char),
-    ConsumeSet(InstConsumeSet),
+    ConsumeSet(SetInclusivity, CharacterSet),
     Split(isize, isize),
     Jmp(isize),
     StartSave(usize),
@@ -28,11 +28,10 @@ enum RelativeOpcode {
 }
 
 impl RelativeOpcode {
-    fn into_opcode_with_index(self, idx: usize) -> Option<Opcode> {
+    fn into_opcode_with_index(self, sets: &mut Vec<CharacterSet>, idx: usize) -> Option<Opcode> {
         match self {
             RelativeOpcode::Any => Some(Opcode::Any),
             RelativeOpcode::Consume(c) => Some(Opcode::Consume(InstConsume::new(c))),
-            RelativeOpcode::ConsumeSet(i) => Some(Opcode::ConsumeSet(i)),
             RelativeOpcode::Split(rel_x, rel_y) => {
                 let signed_idx = idx as isize;
                 let x: usize = (signed_idx + rel_x).try_into().ok()?;
@@ -52,15 +51,30 @@ impl RelativeOpcode {
             RelativeOpcode::StartSave(slot) => Some(Opcode::StartSave(InstStartSave::new(slot))),
             RelativeOpcode::EndSave(slot) => Some(Opcode::EndSave(InstEndSave::new(slot))),
             RelativeOpcode::Match => Some(Opcode::Match),
+            RelativeOpcode::ConsumeSet(inclusivity, char_set) => {
+                let found = sets.iter().position(|set| set == &char_set);
+                let set_idx = match found {
+                    Some(set_idx) => set_idx,
+                    None => {
+                        let set_idx = sets.len();
+                        sets.push(char_set);
+                        set_idx
+                    }
+                };
+
+                Some(Opcode::ConsumeSet(InstConsumeSet {
+                    inclusivity,
+                    set_idx,
+                }))
+            }
         }
     }
 
-    fn into_opcode_with_index_unchecked(self, idx: usize) -> Opcode {
-        self.into_opcode_with_index(idx).unwrap()
+    fn into_opcode_with_index_unchecked(self, sets: &mut Vec<CharacterSet>, idx: usize) -> Opcode {
+        self.into_opcode_with_index(sets, idx).unwrap()
     }
 }
 
-type Opcodes = Vec<Opcode>;
 type RelativeOpcodes = Vec<RelativeOpcode>;
 
 pub fn compile(regex_ast: ast::Regex) -> Result<Instructions, String> {
@@ -88,13 +102,19 @@ pub fn compile(regex_ast: ast::Regex) -> Result<Instructions, String> {
 
     relative_ops
         .map(|rel_ops| {
-            rel_ops
-                .into_iter()
-                .enumerate()
-                .map(|(idx, op)| op.into_opcode_with_index_unchecked(idx))
-                .collect::<Opcodes>()
+            let (sets, absolute_insts) = rel_ops.into_iter().enumerate().fold(
+                (vec![], vec![]),
+                |(mut sets, mut insts), (idx, opcode)| {
+                    let absolute_opcode = opcode.into_opcode_with_index_unchecked(&mut sets, idx);
+                    insts.push(absolute_opcode);
+
+                    (sets, insts)
+                },
+            );
+
+            (sets, absolute_insts)
         })
-        .map(Instructions::new)
+        .map(|(sets, insts)| Instructions::new(sets, insts))
 }
 
 fn expression(expr: ast::Expression) -> Result<RelativeOpcodes, String> {
@@ -250,22 +270,26 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         Match::WithoutQuantifier {
             item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(cc)),
         } => {
-            let set = match cc {
-                ast::CharacterClass::AnyWord => {
-                    InstConsumeSet::inclusive(CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()))
-                }
-                ast::CharacterClass::AnyWordInverted => {
-                    InstConsumeSet::exclusive(CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()))
-                }
-                ast::CharacterClass::AnyDecimalDigit => {
-                    InstConsumeSet::inclusive(CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS))
-                }
-                ast::CharacterClass::AnyDecimalDigitInverted => {
-                    InstConsumeSet::exclusive(CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS))
-                }
+            let (inclusivity, char_set) = match cc {
+                ast::CharacterClass::AnyWord => (
+                    SetInclusivity::Inclusive,
+                    CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()),
+                ),
+                ast::CharacterClass::AnyWordInverted => (
+                    SetInclusivity::Exclusive,
+                    CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()),
+                ),
+                ast::CharacterClass::AnyDecimalDigit => (
+                    SetInclusivity::Inclusive,
+                    CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS),
+                ),
+                ast::CharacterClass::AnyDecimalDigitInverted => (
+                    SetInclusivity::Exclusive,
+                    CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS),
+                ),
             };
 
-            Ok(vec![RelativeOpcode::ConsumeSet(set)])
+            Ok(vec![RelativeOpcode::ConsumeSet(inclusivity, char_set)])
         }
 
         // Catch-all todo
@@ -299,7 +323,7 @@ mod tests {
         ])]));
 
         assert_eq!(
-            Ok(Instructions::new(vec![
+            Ok(Instructions::default().with_opcodes(vec![
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                 Opcode::Any,
                 Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
@@ -327,7 +351,7 @@ mod tests {
         ])]));
 
         assert_eq!(
-            Ok(Instructions::new(vec![
+            Ok(Instructions::default().with_opcodes(vec![
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Consume(InstConsume::new('b')),
                 Opcode::Match,
@@ -349,7 +373,7 @@ mod tests {
         ])]));
 
         assert_eq!(
-            Ok(Instructions::new(vec![
+            Ok(Instructions::default().with_opcodes(vec![
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                 Opcode::Any,
                 Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
@@ -374,11 +398,8 @@ mod tests {
         ])]));
 
         assert_eq!(
-            Ok(Instructions::new(vec![
-                Opcode::Any,
-                Opcode::Any,
-                Opcode::Match,
-            ])),
+            Ok(Instructions::default()
+                .with_opcodes(vec![Opcode::Any, Opcode::Any, Opcode::Match,])),
             compile(regex_ast)
         );
 
@@ -391,7 +412,7 @@ mod tests {
         ])]));
 
         assert_eq!(
-            Ok(Instructions::new(vec![
+            Ok(Instructions::default().with_opcodes(vec![
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Match,
@@ -414,7 +435,7 @@ mod tests {
         ])]));
 
         assert_eq!(
-            Ok(Instructions::new(vec![
+            Ok(Instructions::default().with_opcodes(vec![
                 Opcode::Any,
                 Opcode::Any,
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(5))),
@@ -434,7 +455,7 @@ mod tests {
         ])]));
 
         assert_eq!(
-            Ok(Instructions::new(vec![
+            Ok(Instructions::default().with_opcodes(vec![
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(5))),
@@ -463,7 +484,7 @@ mod tests {
         ])]));
 
         assert_eq!(
-            Ok(Instructions::new(vec![
+            Ok(Instructions::default().with_opcodes(vec![
                 Opcode::Any,
                 Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(3))),
                 Opcode::Any,
@@ -487,7 +508,7 @@ mod tests {
         ])]));
 
         assert_eq!(
-            Ok(Instructions::new(vec![
+            Ok(Instructions::default().with_opcodes(vec![
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(3))),
                 Opcode::Consume(InstConsume::new('a')),
@@ -515,15 +536,17 @@ mod tests {
         ])]));
 
         assert_eq!(
-            Ok(Instructions::new(vec![
-                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Ranges(vec![
+            Ok(Instructions::default()
+                .with_sets(vec![CharacterSet::Ranges(vec![
                     'a'..='z',
                     'A'..='Z',
                     '0'..='9',
                     '_'..='_',
-                ]))),
-                Opcode::Match,
-            ])),
+                ])])
+                .with_opcodes(vec![
+                    Opcode::ConsumeSet(InstConsumeSet::inclusive(0)),
+                    Opcode::Match,
+                ])),
             compile(regex_ast)
         );
 
@@ -537,10 +560,12 @@ mod tests {
         ])]));
 
         assert_eq!(
-            Ok(Instructions::new(vec![
-                Opcode::ConsumeSet(InstConsumeSet::inclusive(CharacterSet::Range('0'..='9'))),
-                Opcode::Match,
-            ])),
+            Ok(Instructions::default()
+                .with_sets(vec![CharacterSet::Range('0'..='9')])
+                .with_opcodes(vec![
+                    Opcode::ConsumeSet(InstConsumeSet::inclusive(0)),
+                    Opcode::Match,
+                ])),
             compile(regex_ast)
         );
     }
