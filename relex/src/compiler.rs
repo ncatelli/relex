@@ -19,7 +19,7 @@ const ANY_DECIMAL_DIGIT_CLASS: std::ops::RangeInclusive<char> = '0'..='9';
 enum RelativeOpcode {
     Any,
     Consume(char),
-    ConsumeSet(SetInclusivity, CharacterSet),
+    ConsumeSet(SetMembership, CharacterSet),
     Split(isize, isize),
     Jmp(isize),
     StartSave(usize),
@@ -272,19 +272,19 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => {
             let (inclusivity, char_set) = match cc {
                 ast::CharacterClass::AnyWord => (
-                    SetInclusivity::Inclusive,
+                    SetMembership::Inclusive,
                     CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()),
                 ),
                 ast::CharacterClass::AnyWordInverted => (
-                    SetInclusivity::Exclusive,
+                    SetMembership::Exclusive,
                     CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()),
                 ),
                 ast::CharacterClass::AnyDecimalDigit => (
-                    SetInclusivity::Inclusive,
+                    SetMembership::Inclusive,
                     CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS),
                 ),
                 ast::CharacterClass::AnyDecimalDigitInverted => (
-                    SetInclusivity::Exclusive,
+                    SetMembership::Exclusive,
                     CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS),
                 ),
             };

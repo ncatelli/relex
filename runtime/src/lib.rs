@@ -401,7 +401,7 @@ impl CharacterRangeSetVerifiable for CharacterSet {
 
 /// Denotes whether a given set is inclusive or exclusive to a match.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SetInclusivity {
+pub enum SetMembership {
     Inclusive,
     Exclusive,
 }
@@ -411,7 +411,7 @@ pub enum SetInclusivity {
 /// characters. This functions as a brevity tool to prevent long alternations.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InstConsumeSet {
-    pub inclusivity: SetInclusivity,
+    pub inclusivity: SetMembership,
     pub set_idx: usize,
 }
 
@@ -419,7 +419,7 @@ impl InstConsumeSet {
     #[must_use]
     pub fn inclusive(set_idx: usize) -> Self {
         Self {
-            inclusivity: SetInclusivity::Inclusive,
+            inclusivity: SetMembership::Inclusive,
             set_idx,
         }
     }
@@ -427,7 +427,7 @@ impl InstConsumeSet {
     #[must_use]
     pub fn exclusive(set_idx: usize) -> Self {
         Self {
-            inclusivity: SetInclusivity::Exclusive,
+            inclusivity: SetMembership::Exclusive,
             set_idx,
         }
     }
@@ -705,10 +705,10 @@ pub fn run<const SG: usize>(program: &Instructions, input: &str) -> Option<Vec<S
                     inclusivity,
                     set_idx,
                 })) if next_char.map_or(false, |c| match inclusivity {
-                    SetInclusivity::Inclusive => {
+                    SetMembership::Inclusive => {
                         sets.get(*set_idx).map_or(false, |set| set.in_set(c))
                     }
-                    SetInclusivity::Exclusive => {
+                    SetMembership::Exclusive => {
                         sets.get(*set_idx).map_or(false, |set| set.not_in_set(c))
                     }
                 }) =>
