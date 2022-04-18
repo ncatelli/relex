@@ -193,6 +193,25 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
     };
 
     match m {
+        // match zero or one
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Eager(QuantifierType::ZeroOrOne),
+        } => todo!(),
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Lazy(QuantifierType::ZeroOrOne),
+        } => todo!(),
+
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(_))),
+            quantifier: Quantifier::Eager(QuantifierType::ZeroOrOne),
+        } => todo!(),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(_))),
+            quantifier: Quantifier::Lazy(QuantifierType::ZeroOrOne),
+        } => todo!(),
+
         // match zero or more
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
@@ -203,20 +222,21 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             RelativeOpcode::Any
         )),
         Match::WithQuantifier {
-            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
-            quantifier: Quantifier::Eager(QuantifierType::ZeroOrMore),
-        } => Ok(generate_range_quantifier_block!(
-            eager,
-            0,
-            RelativeOpcode::Consume(c)
-        )),
-        Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
             quantifier: Quantifier::Lazy(QuantifierType::ZeroOrMore),
         } => Ok(generate_range_quantifier_block!(
             lazy,
             0,
             RelativeOpcode::Any
+        )),
+
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier: Quantifier::Eager(QuantifierType::ZeroOrMore),
+        } => Ok(generate_range_quantifier_block!(
+            eager,
+            0,
+            RelativeOpcode::Consume(c)
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
@@ -237,20 +257,20 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             RelativeOpcode::Any
         )),
         Match::WithQuantifier {
-            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
-            quantifier: Quantifier::Eager(QuantifierType::OneOrMore),
-        } => Ok(generate_range_quantifier_block!(
-            eager,
-            1,
-            RelativeOpcode::Consume(c)
-        )),
-        Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
             quantifier: Quantifier::Lazy(QuantifierType::OneOrMore),
         } => Ok(generate_range_quantifier_block!(
             lazy,
             1,
             RelativeOpcode::Any
+        )),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier: Quantifier::Eager(QuantifierType::OneOrMore),
+        } => Ok(generate_range_quantifier_block!(
+            eager,
+            1,
+            RelativeOpcode::Consume(c)
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
@@ -327,6 +347,22 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             upper,
             RelativeOpcode::Any
         )),
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier:
+                Quantifier::Lazy(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(lower),
+                    upper_bound: Integer(upper),
+                }),
+        } => Ok(generate_range_quantifier_block!(
+            lazy,
+            lower,
+            upper,
+            RelativeOpcode::Any
+        )),
+        Match::WithoutQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+        } => Ok(vec![RelativeOpcode::Any]),
 
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
@@ -341,21 +377,6 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             upper,
             RelativeOpcode::Consume(c)
         )),
-
-        Match::WithQuantifier {
-            item: MatchItem::MatchAnyCharacter,
-            quantifier:
-                Quantifier::Lazy(QuantifierType::MatchBetweenRange {
-                    lower_bound: Integer(lower),
-                    upper_bound: Integer(upper),
-                }),
-        } => Ok(generate_range_quantifier_block!(
-            lazy,
-            lower,
-            upper,
-            RelativeOpcode::Any
-        )),
-
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
             quantifier:
@@ -369,48 +390,83 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             upper,
             RelativeOpcode::Consume(c)
         )),
-
-        Match::WithoutQuantifier {
-            item: MatchItem::MatchAnyCharacter,
-        } => Ok(vec![RelativeOpcode::Any]),
         Match::WithoutQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
         } => Ok(vec![RelativeOpcode::Consume(c)]),
 
-        Match::WithoutQuantifier {
-            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(cc)),
-        } => {
-            let (set_membership, char_set) = match cc {
-                ast::CharacterClass::AnyWord => (
-                    SetMembership::Inclusive,
-                    CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()),
-                ),
-                ast::CharacterClass::AnyWordInverted => (
-                    SetMembership::Exclusive,
-                    CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()),
-                ),
-                ast::CharacterClass::AnyDecimalDigit => (
-                    SetMembership::Inclusive,
-                    CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS),
-                ),
-                ast::CharacterClass::AnyDecimalDigitInverted => (
-                    SetMembership::Exclusive,
-                    CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS),
-                ),
-            };
-
-            Ok(vec![RelativeOpcode::ConsumeSet(set_membership, char_set)])
-        }
-
-        // Catch-all todo
         Match::WithQuantifier {
-            item: _,
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(_)),
             quantifier: _,
         } => todo!(),
         Match::WithoutQuantifier {
-            item: MatchItem::MatchCharacterClass(_),
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(cc)),
+        } => character_class(cc),
+
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(_)),
+            quantifier: _,
         } => todo!(),
+        Match::WithoutQuantifier {
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(cg)),
+        } => character_group(cg),
+
+        // unicode categories
+        Match::WithQuantifier {
+            item:
+                MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClassFromUnicodeCategory(
+                    _,
+                )),
+            quantifier: _,
+        } => unimplemented!(),
+        Match::WithoutQuantifier {
+            item:
+                MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClassFromUnicodeCategory(
+                    _,
+                )),
+        } => unimplemented!(),
     }
+}
+
+fn character_group(cg: ast::CharacterGroup) -> Result<RelativeOpcodes, String> {
+    match cg {
+        ast::CharacterGroup::NegatedItems(cgi) => todo!(),
+        ast::CharacterGroup::Items(cgi) => {
+            todo!()
+        }
+    }
+}
+
+fn character_group_item(cgi: ast::CharacterGroupItem) -> Result<RelativeOpcodes, String> {
+    match cgi {
+        ast::CharacterGroupItem::CharacterClassFromUnicodeCategory(_) => unimplemented!(),
+        ast::CharacterGroupItem::CharacterClass(cc) => character_class(cc),
+        ast::CharacterGroupItem::CharacterRangeWithUpperBound(_, _) => todo!(),
+        ast::CharacterGroupItem::CharacterRange(_) => todo!(),
+        ast::CharacterGroupItem::Char(ast::Char(c)) => Ok(vec![RelativeOpcode::Consume(c)]),
+    }
+}
+
+fn character_class(cc: ast::CharacterClass) -> Result<RelativeOpcodes, String> {
+    let (set_membership, char_set) = match cc {
+        ast::CharacterClass::AnyWord => (
+            SetMembership::Inclusive,
+            CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()),
+        ),
+        ast::CharacterClass::AnyWordInverted => (
+            SetMembership::Exclusive,
+            CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()),
+        ),
+        ast::CharacterClass::AnyDecimalDigit => (
+            SetMembership::Inclusive,
+            CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS),
+        ),
+        ast::CharacterClass::AnyDecimalDigitInverted => (
+            SetMembership::Exclusive,
+            CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS),
+        ),
+    };
+
+    Ok(vec![RelativeOpcode::ConsumeSet(set_membership, char_set)])
 }
 
 #[cfg(test)]
