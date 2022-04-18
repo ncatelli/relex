@@ -119,33 +119,35 @@ pub fn compile(regex_ast: ast::Regex) -> Result<Instructions, String> {
 
 fn expression(expr: ast::Expression) -> Result<RelativeOpcodes, String> {
     let ast::Expression(subexprs) = expr;
+    let subexpr_cnt = subexprs.len();
 
-    subexprs
+    let compiled_subexprs = subexprs
         .into_iter()
         .map(subexpression)
-        .collect::<Result<Vec<_>, _>>()
-        .map(|opcodes| {
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let compiled_subexpressions_with_applied_alternations = compiled_subexprs
+        .into_iter()
+        .enumerate()
+        .map(|(idx, opcodes)| {
             let opcodes_cnt = opcodes.len();
 
-            opcodes
-                .into_iter()
-                .enumerate()
-                .map(|(idx, ops)| {
-                    // add 1 to accomodate the appended split
-                    let start_of_next_alternation = ((idx + 1) != opcodes_cnt)
-                        .then(|| ops.len() + 1)
-                        .map(|len| len as isize);
-                    (start_of_next_alternation, ops)
-                })
-                .flat_map(|(start_of_next, ops)| match start_of_next {
-                    Some(start_of_next) => [RelativeOpcode::Split(1, start_of_next)]
-                        .into_iter()
-                        .chain(ops.into_iter())
-                        .collect(),
-                    None => ops,
-                })
-                .collect()
+            // add 1 to accomodate the appended split
+            let start_of_next_alternation = ((idx + 1) != subexpr_cnt)
+                .then(|| opcodes_cnt + 1)
+                .map(|len| len as isize);
+            (start_of_next_alternation, opcodes)
         })
+        .flat_map(|(start_of_next, ops)| match start_of_next {
+            Some(start_of_next) => [RelativeOpcode::Split(1, start_of_next)]
+                .into_iter()
+                .chain(ops.into_iter())
+                .collect(),
+            None => ops,
+        })
+        .collect();
+
+    Ok(compiled_subexpressions_with_applied_alternations)
 }
 
 fn subexpression(subexpr: ast::SubExpression) -> Result<RelativeOpcodes, String> {
