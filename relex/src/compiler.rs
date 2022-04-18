@@ -408,7 +408,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => todo!(),
         Match::WithoutQuantifier {
             item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(cg)),
-        } => todo!(),
+        } => character_group(cg),
 
         // unicode categories
         Match::WithQuantifier {
@@ -430,7 +430,9 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
 fn character_group(cg: ast::CharacterGroup) -> Result<RelativeOpcodes, String> {
     match cg {
         ast::CharacterGroup::NegatedItems(cgi) => todo!(),
-        ast::CharacterGroup::Items(cgi) => todo!(),
+        ast::CharacterGroup::Items(cgi) => {
+            todo!()
+        }
     }
 }
 
