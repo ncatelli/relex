@@ -537,6 +537,24 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_alternation() {
+        use ast::*;
+        let input = "^a|b".chars().enumerate().collect::<Vec<(usize, char)>>();
+
+        assert_eq!(
+            Ok(Regex::StartOfStringAnchored(Expression(vec![
+                SubExpression(vec![SubExpressionItem::Match(Match::WithoutQuantifier {
+                    item: MatchItem::MatchCharacter(MatchCharacter(Char('a')))
+                }),]),
+                SubExpression(vec![SubExpressionItem::Match(Match::WithoutQuantifier {
+                    item: MatchItem::MatchCharacter(MatchCharacter(Char('b')))
+                }),])
+            ]))),
+            parse(&input)
+        )
+    }
+
+    #[test]
     fn should_parse_eager_repetition_quantifiers() {
         use ast::*;
 

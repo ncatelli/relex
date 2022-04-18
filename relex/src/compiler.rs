@@ -124,7 +124,28 @@ fn expression(expr: ast::Expression) -> Result<RelativeOpcodes, String> {
         .into_iter()
         .map(subexpression)
         .collect::<Result<Vec<_>, _>>()
-        .map(|opcodes| opcodes.into_iter().flatten().collect())
+        .map(|opcodes| {
+            let opcodes_cnt = opcodes.len();
+
+            opcodes
+                .into_iter()
+                .enumerate()
+                .map(|(idx, ops)| {
+                    // add 1 to accomodate the appended split
+                    let start_of_next_alternation = ((idx + 1) != opcodes_cnt)
+                        .then(|| ops.len() + 1)
+                        .map(|len| len as isize);
+                    (start_of_next_alternation, ops)
+                })
+                .flat_map(|(start_of_next, ops)| match start_of_next {
+                    Some(start_of_next) => [RelativeOpcode::Split(1, start_of_next)]
+                        .into_iter()
+                        .chain(ops.into_iter())
+                        .collect(),
+                    None => ops,
+                })
+                .collect()
+        })
 }
 
 fn subexpression(subexpr: ast::SubExpression) -> Result<RelativeOpcodes, String> {
@@ -518,6 +539,32 @@ mod tests {
 
         assert_eq!(
             Ok(Instructions::default().with_opcodes(vec![
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Consume(InstConsume::new('b')),
+                Opcode::Match,
+            ])),
+            compile(regex_ast)
+        )
+    }
+
+    #[test]
+    fn should_compile_alternation() {
+        use ast::*;
+        use relex_runtime::*;
+
+        // approximate to `^ab`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![
+            SubExpression(vec![SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+            })]),
+            SubExpression(vec![SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchCharacter(MatchCharacter(Char('b'))),
+            })]),
+        ]));
+
+        assert_eq!(
+            Ok(Instructions::default().with_opcodes(vec![
+                Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(2))),
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Consume(InstConsume::new('b')),
                 Opcode::Match,
