@@ -139,8 +139,8 @@ fn expression(expr: ast::Expression) -> Result<RelativeOpcodes, String> {
             }
         })
         .collect();
-    let total_length_of_compiled_expr: usize = length_of_each_subexpr.iter().sum();
 
+    let total_length_of_compiled_expr: usize = length_of_each_subexpr.iter().sum();
     let start_end_offsets_by_subexpr: Vec<(usize, usize)> = length_of_each_subexpr
         .iter()
         .fold(
