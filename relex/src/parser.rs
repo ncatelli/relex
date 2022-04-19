@@ -166,10 +166,7 @@ fn character_group<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Ch
                 .map(|negation| negation.is_some()),
         )),
         parcel::left(parcel::join(
-            parcel::one_or_more(character_group_item()).map(|gis| {
-                println!("Reach {:?}", &gis);
-                gis
-            }),
+            parcel::one_or_more(character_group_item()),
             expect_character(']'),
         )),
     )
@@ -664,10 +661,19 @@ mod tests {
     #[test]
     fn should_parse_character_group_items() {
         use ast::*;
-        let input_output = vec![(
-            "^[a]",
-            CharacterGroup::Items(vec![CharacterGroupItem::Char(Char('a'))]),
-        )];
+        let input_output = vec![
+            (
+                "^[a]",
+                CharacterGroup::Items(vec![CharacterGroupItem::Char(Char('a'))]),
+            ),
+            (
+                "^[ab]",
+                CharacterGroup::Items(vec![
+                    CharacterGroupItem::Char(Char('a')),
+                    CharacterGroupItem::Char(Char('b')),
+                ]),
+            ),
+        ];
 
         for (test_id, (input, output)) in input_output.into_iter().enumerate() {
             let input = input.chars().enumerate().collect::<Vec<(usize, char)>>();
