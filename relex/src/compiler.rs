@@ -1,13 +1,6 @@
 use super::ast;
 use relex_runtime::*;
 
-/// A representation of a AnyWordClass character class, in range format.
-const ANY_WORD_CLASS: [std::ops::RangeInclusive<char>; 4] =
-    ['a'..='z', 'A'..='Z', '0'..='9', '_'..='_'];
-
-/// A representation of a AnyDecimalDigitClass character class, in range format.
-const ANY_DECIMAL_DIGIT_CLASS: std::ops::RangeInclusive<char> = '0'..='9';
-
 /// A internal representation of the `relex_runtime::Opcode` type, with relative
 /// addressing.
 ///
@@ -505,21 +498,71 @@ fn character_group_item(cgi: ast::CharacterGroupItem) -> Result<RelativeOpcodes,
     }
 }
 
+// character classes
+
+/// A representation of a AnyWordClass character class, in character set format.
+pub struct AnyWordClass;
+
+impl AnyWordClass {
+    const RANGES: [std::ops::RangeInclusive<char>; 4] =
+        ['a'..='z', 'A'..='Z', '0'..='9', '_'..='_'];
+}
+
+impl CharacterSetRepresentable for AnyWordClass {}
+
+impl From<AnyWordClass> for CharacterSet {
+    fn from(_: AnyWordClass) -> Self {
+        CharacterSet::inclusive(CharacterAlphabet::Ranges(AnyWordClass::RANGES.to_vec()))
+    }
+}
+
+/// A representation of a AnyWordClassInverted character class, in character
+/// set format.
+pub struct AnyWordClassInverted;
+
+impl CharacterSetRepresentable for AnyWordClassInverted {}
+
+impl From<AnyWordClassInverted> for CharacterSet {
+    fn from(_: AnyWordClassInverted) -> Self {
+        CharacterSet::exclusive(CharacterAlphabet::Ranges(AnyWordClass::RANGES.to_vec()))
+    }
+}
+
+/// A representation of a AnyDecimalDigitClass character class, in character
+/// set format.
+pub struct AnyDecimalDigitClass;
+
+impl AnyDecimalDigitClass {
+    const RANGE: std::ops::RangeInclusive<char> = '0'..='9';
+}
+
+impl CharacterSetRepresentable for AnyDecimalDigitClass {}
+
+impl From<AnyDecimalDigitClass> for CharacterSet {
+    fn from(_: AnyDecimalDigitClass) -> Self {
+        CharacterSet::inclusive(CharacterAlphabet::Range(AnyDecimalDigitClass::RANGE))
+    }
+}
+
+/// A representation of a AnyDecimalDigitClassInverted character class, in
+/// character set format.
+pub struct AnyDecimalDigitClassInverted;
+
+impl CharacterSetRepresentable for AnyDecimalDigitClassInverted {}
+
+impl From<AnyDecimalDigitClassInverted> for CharacterSet {
+    fn from(_: AnyDecimalDigitClassInverted) -> Self {
+        CharacterSet::exclusive(CharacterAlphabet::Range(AnyDecimalDigitClass::RANGE))
+    }
+}
+
 fn character_class(cc: ast::CharacterClass) -> Result<RelativeOpcodes, String> {
     let char_set = match cc {
-        ast::CharacterClass::AnyWord => {
-            CharacterSet::inclusive(CharacterAlphabet::Ranges(ANY_WORD_CLASS.to_vec()))
-        }
-        ast::CharacterClass::AnyWordInverted => {
-            CharacterSet::exclusive(CharacterAlphabet::Ranges(ANY_WORD_CLASS.to_vec()))
-        }
+        ast::CharacterClass::AnyWord => AnyWordClass.into(),
+        ast::CharacterClass::AnyWordInverted => AnyWordClassInverted.into(),
 
-        ast::CharacterClass::AnyDecimalDigit => {
-            CharacterSet::inclusive(CharacterAlphabet::Range(ANY_DECIMAL_DIGIT_CLASS))
-        }
-        ast::CharacterClass::AnyDecimalDigitInverted => {
-            CharacterSet::exclusive(CharacterAlphabet::Range(ANY_DECIMAL_DIGIT_CLASS))
-        }
+        ast::CharacterClass::AnyDecimalDigit => AnyDecimalDigitClass.into(),
+        ast::CharacterClass::AnyDecimalDigitInverted => AnyDecimalDigitClassInverted.into(),
     };
 
     Ok(vec![RelativeOpcode::ConsumeSet(char_set)])

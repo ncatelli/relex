@@ -378,6 +378,9 @@ impl<CRSV: CharacterRangeSetVerifiable> CharacterRangeSetVerifiable for Vec<CRSV
     }
 }
 
+/// Defines that a given type can be converted into a character set.
+pub trait CharacterSetRepresentable: Into<CharacterSet> {}
+
 /// Representing a runtime-dispatchable set of characters by associating a sets
 /// membership to a character alphabet.
 #[derive(Debug, Clone, PartialEq)]
