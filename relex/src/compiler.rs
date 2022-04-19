@@ -472,29 +472,30 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
 
 fn character_group(cg: ast::CharacterGroup) -> Result<RelativeOpcodes, String> {
     match cg {
-        ast::CharacterGroup::NegatedItems(_cgi) => todo!(),
-        ast::CharacterGroup::Items(_cgi) => {
+        ast::CharacterGroup::NegatedItems(_cgis) => todo!(),
+        ast::CharacterGroup::Items(_cgis) => {
             todo!()
         }
     }
 }
 
 #[allow(dead_code)]
-fn character_group_item(cgi: ast::CharacterGroupItem) -> Result<RelativeOpcodes, String> {
+fn character_group_item_to_set(cgi: ast::CharacterGroupItem) -> CharacterSet {
     use ast::Char;
 
     match cgi {
         ast::CharacterGroupItem::CharacterClassFromUnicodeCategory(_) => unimplemented!(),
-        ast::CharacterGroupItem::CharacterClass(cc) => character_class(cc),
+        ast::CharacterGroupItem::CharacterClass(cc) => character_class_to_set(cc),
         ast::CharacterGroupItem::CharacterRangeWithUpperBound(Char(lower), Char(upper)) => {
-            Ok(vec![RelativeOpcode::ConsumeSet(CharacterSet::inclusive(
-                CharacterAlphabet::Range(lower..=upper),
-            ))])
+            let alphabet = CharacterAlphabet::Range(lower..=upper);
+            CharacterSet::inclusive(alphabet)
         }
-        ast::CharacterGroupItem::CharacterRange(Char(c)) => Ok(vec![RelativeOpcode::ConsumeSet(
-            CharacterSet::inclusive(CharacterAlphabet::Explicit(vec![c])),
-        )]),
-        ast::CharacterGroupItem::Char(Char(c)) => Ok(vec![RelativeOpcode::Consume(c)]),
+        ast::CharacterGroupItem::CharacterRange(Char(c)) => {
+            CharacterSet::inclusive(CharacterAlphabet::Explicit(vec![c]))
+        }
+        ast::CharacterGroupItem::Char(Char(c)) => {
+            CharacterSet::inclusive(CharacterAlphabet::Explicit(vec![c]))
+        }
     }
 }
 
@@ -557,15 +558,19 @@ impl From<AnyDecimalDigitClassInverted> for CharacterSet {
 }
 
 fn character_class(cc: ast::CharacterClass) -> Result<RelativeOpcodes, String> {
-    let char_set = match cc {
+    let set = character_class_to_set(cc);
+
+    Ok(vec![RelativeOpcode::ConsumeSet(set)])
+}
+
+fn character_class_to_set(cc: ast::CharacterClass) -> CharacterSet {
+    match cc {
         ast::CharacterClass::AnyWord => AnyWordClass.into(),
         ast::CharacterClass::AnyWordInverted => AnyWordClassInverted.into(),
 
         ast::CharacterClass::AnyDecimalDigit => AnyDecimalDigitClass.into(),
         ast::CharacterClass::AnyDecimalDigitInverted => AnyDecimalDigitClassInverted.into(),
-    };
-
-    Ok(vec![RelativeOpcode::ConsumeSet(char_set)])
+    }
 }
 
 #[cfg(test)]
