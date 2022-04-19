@@ -126,23 +126,53 @@ fn expression(expr: ast::Expression) -> Result<RelativeOpcodes, String> {
         .map(subexpression)
         .collect::<Result<Vec<_>, _>>()?;
 
+    let length_of_each_subexpr: Vec<_> = compiled_subexprs
+        .iter()
+        .enumerate()
+        .map(|(idx, subexpr)| ((idx + 1 == subexpr_cnt), subexpr))
+        .map(|(is_last, subexpr)| {
+            // last alternation doesn't require a split prefix and jump suffix
+            if is_last {
+                subexpr.len()
+            } else {
+                subexpr.len() + 2
+            }
+        })
+        .collect();
+    let total_length_of_compiled_expr: usize = length_of_each_subexpr.iter().sum();
+
+    let start_end_offsets_by_subexpr: Vec<(usize, usize)> = length_of_each_subexpr
+        .iter()
+        .fold(
+            // add 1 to set end at first instruction of next expr
+            (total_length_of_compiled_expr + 1, vec![]),
+            |(offset_to_end, mut acc), &subexpr_len| {
+                let new_offset_to_end = offset_to_end - subexpr_len;
+
+                acc.push((subexpr_len, new_offset_to_end));
+                (new_offset_to_end, acc)
+            },
+        )
+        .1;
+
     let compiled_subexpressions_with_applied_alternations = compiled_subexprs
         .into_iter()
+        .zip(start_end_offsets_by_subexpr.into_iter())
         .enumerate()
-        .map(|(idx, opcodes)| {
-            let opcodes_cnt = opcodes.len();
-
-            // add 1 to accomodate the appended split
-            let start_of_next_alternation = ((idx + 1) != subexpr_cnt)
-                .then(|| opcodes_cnt + 1)
-                .map(|len| len as isize);
-            (start_of_next_alternation, opcodes)
+        .map(|(idx, (opcodes, start_end_offsets))| {
+            let optional_next_offsets = ((idx + 1) != subexpr_cnt)
+                .then(|| start_end_offsets)
+                .map(|(start, end)| (start as isize, end as isize));
+            (optional_next_offsets, opcodes)
         })
         .flat_map(|(start_of_next, ops)| match start_of_next {
-            Some(start_of_next) => [RelativeOpcode::Split(1, start_of_next)]
-                .into_iter()
-                .chain(ops.into_iter())
-                .collect(),
+            Some((start_of_next_subexpr_offset, end_of_expr_offset)) => {
+                [RelativeOpcode::Split(1, start_of_next_subexpr_offset)]
+                    .into_iter()
+                    .chain(ops.into_iter())
+                    .chain([RelativeOpcode::Jmp(end_of_expr_offset)].into_iter())
+                    .collect()
+            }
             None => ops,
         })
         .collect();
@@ -554,7 +584,7 @@ mod tests {
         use ast::*;
         use relex_runtime::*;
 
-        // approximate to `^ab`
+        // approximate to `^a|b`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![
             SubExpression(vec![SubExpressionItem::Match(Match::WithoutQuantifier {
                 item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
@@ -566,8 +596,9 @@ mod tests {
 
         assert_eq!(
             Ok(Instructions::default().with_opcodes(vec![
-                Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(2))),
+                Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(3))),
                 Opcode::Consume(InstConsume::new('a')),
+                Opcode::Jmp(InstJmp::new(InstIndex::from(4))),
                 Opcode::Consume(InstConsume::new('b')),
                 Opcode::Match,
             ])),
