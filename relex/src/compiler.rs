@@ -19,7 +19,7 @@ const ANY_DECIMAL_DIGIT_CLASS: std::ops::RangeInclusive<char> = '0'..='9';
 enum RelativeOpcode {
     Any,
     Consume(char),
-    ConsumeSet(SetMembership, CharacterSet),
+    ConsumeSet(CharacterSet),
     Split(isize, isize),
     Jmp(isize),
     StartSave(usize),
@@ -51,7 +51,7 @@ impl RelativeOpcode {
             RelativeOpcode::StartSave(slot) => Some(Opcode::StartSave(InstStartSave::new(slot))),
             RelativeOpcode::EndSave(slot) => Some(Opcode::EndSave(InstEndSave::new(slot))),
             RelativeOpcode::Match => Some(Opcode::Match),
-            RelativeOpcode::ConsumeSet(set_membership, char_set) => {
+            RelativeOpcode::ConsumeSet(char_set) => {
                 let found = sets.iter().position(|set| set == &char_set);
                 let set_idx = match found {
                     Some(set_idx) => set_idx,
@@ -62,10 +62,7 @@ impl RelativeOpcode {
                     }
                 };
 
-                Some(Opcode::ConsumeSet(InstConsumeSet {
-                    membership: set_membership,
-                    idx: set_idx,
-                }))
+                Some(Opcode::ConsumeSet(InstConsumeSet { idx: set_idx }))
             }
         }
     }
@@ -491,36 +488,41 @@ fn character_group(cg: ast::CharacterGroup) -> Result<RelativeOpcodes, String> {
 
 #[allow(dead_code)]
 fn character_group_item(cgi: ast::CharacterGroupItem) -> Result<RelativeOpcodes, String> {
+    use ast::Char;
+
     match cgi {
         ast::CharacterGroupItem::CharacterClassFromUnicodeCategory(_) => unimplemented!(),
         ast::CharacterGroupItem::CharacterClass(cc) => character_class(cc),
-        ast::CharacterGroupItem::CharacterRangeWithUpperBound(_, _) => todo!(),
-        ast::CharacterGroupItem::CharacterRange(_) => todo!(),
-        ast::CharacterGroupItem::Char(ast::Char(c)) => Ok(vec![RelativeOpcode::Consume(c)]),
+        ast::CharacterGroupItem::CharacterRangeWithUpperBound(Char(lower), Char(upper)) => {
+            Ok(vec![RelativeOpcode::ConsumeSet(CharacterSet::inclusive(
+                CharacterAlphabet::Range(lower..=upper),
+            ))])
+        }
+        ast::CharacterGroupItem::CharacterRange(Char(c)) => Ok(vec![RelativeOpcode::ConsumeSet(
+            CharacterSet::inclusive(CharacterAlphabet::Explicit(vec![c])),
+        )]),
+        ast::CharacterGroupItem::Char(Char(c)) => Ok(vec![RelativeOpcode::Consume(c)]),
     }
 }
 
 fn character_class(cc: ast::CharacterClass) -> Result<RelativeOpcodes, String> {
-    let (set_membership, char_set) = match cc {
-        ast::CharacterClass::AnyWord => (
-            SetMembership::Inclusive,
-            CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()),
-        ),
-        ast::CharacterClass::AnyWordInverted => (
-            SetMembership::Exclusive,
-            CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()),
-        ),
-        ast::CharacterClass::AnyDecimalDigit => (
-            SetMembership::Inclusive,
-            CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS),
-        ),
-        ast::CharacterClass::AnyDecimalDigitInverted => (
-            SetMembership::Exclusive,
-            CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS),
-        ),
+    let char_set = match cc {
+        ast::CharacterClass::AnyWord => {
+            CharacterSet::inclusive(CharacterAlphabet::Ranges(ANY_WORD_CLASS.to_vec()))
+        }
+        ast::CharacterClass::AnyWordInverted => {
+            CharacterSet::exclusive(CharacterAlphabet::Ranges(ANY_WORD_CLASS.to_vec()))
+        }
+
+        ast::CharacterClass::AnyDecimalDigit => {
+            CharacterSet::inclusive(CharacterAlphabet::Range(ANY_DECIMAL_DIGIT_CLASS))
+        }
+        ast::CharacterClass::AnyDecimalDigitInverted => {
+            CharacterSet::exclusive(CharacterAlphabet::Range(ANY_DECIMAL_DIGIT_CLASS))
+        }
     };
 
-    Ok(vec![RelativeOpcode::ConsumeSet(set_membership, char_set)])
+    Ok(vec![RelativeOpcode::ConsumeSet(char_set)])
 }
 
 #[cfg(test)]
@@ -870,12 +872,9 @@ mod tests {
 
         assert_eq!(
             Ok(Instructions::default()
-                .with_sets(vec![CharacterSet::Ranges(vec![
-                    'a'..='z',
-                    'A'..='Z',
-                    '0'..='9',
-                    '_'..='_',
-                ])])
+                .with_sets(vec![CharacterSet::inclusive(CharacterAlphabet::Ranges(
+                    vec!['a'..='z', 'A'..='Z', '0'..='9', '_'..='_',]
+                ))])
                 .with_opcodes(vec![
                     Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
                     Opcode::Match,
@@ -894,7 +893,9 @@ mod tests {
 
         assert_eq!(
             Ok(Instructions::default()
-                .with_sets(vec![CharacterSet::Range('0'..='9')])
+                .with_sets(vec![CharacterSet::inclusive(CharacterAlphabet::Range(
+                    '0'..='9'
+                ))])
                 .with_opcodes(vec![
                     Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
                     Opcode::Match,
