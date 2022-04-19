@@ -485,7 +485,10 @@ pub struct InstConsumeSet {
 }
 
 impl InstConsumeSet {
-    #[must_use]
+    pub fn new(idx: usize) -> Self {
+        Self::member_of(idx)
+    }
+
     pub fn member_of(idx: usize) -> Self {
         Self { idx }
     }

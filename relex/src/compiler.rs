@@ -419,15 +419,24 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
 }
 
 fn character_group(cg: ast::CharacterGroup) -> Result<RelativeOpcodes, String> {
-    match cg {
-        ast::CharacterGroup::NegatedItems(_cgis) => todo!(),
-        ast::CharacterGroup::Items(_cgis) => {
-            todo!()
-        }
-    }
+    let sets: Vec<RelativeOpcodes> = match cg {
+        ast::CharacterGroup::NegatedItems(cgis) => cgis
+            .into_iter()
+            .map(character_group_item_to_set)
+            .map(|set| set.invert_membership())
+            .map(|set| vec![RelativeOpcode::ConsumeSet(set)])
+            .collect(),
+
+        ast::CharacterGroup::Items(cgis) => cgis
+            .into_iter()
+            .map(character_group_item_to_set)
+            .map(|set| vec![RelativeOpcode::ConsumeSet(set)])
+            .collect(),
+    };
+
+    alternations_for_supplied_relative_opcodes(sets)
 }
 
-#[allow(dead_code)]
 fn character_group_item_to_set(cgi: ast::CharacterGroupItem) -> CharacterSet {
     use ast::Char;
 
@@ -952,6 +961,97 @@ mod tests {
                 .with_sets(vec![CharacterSet::inclusive(CharacterAlphabet::Range(
                     '0'..='9'
                 ))])
+                .with_opcodes(vec![
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Match,
+                ])),
+            compile(regex_ast)
+        );
+    }
+
+    #[test]
+    fn should_compile_single_character_character_group() {
+        use ast::*;
+        use relex_runtime::*;
+
+        // approximate to `^[a]`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(
+                    CharacterGroup::Items(vec![CharacterGroupItem::Char(Char('a'))]),
+                )),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::default()
+                .with_sets(vec![CharacterSet::inclusive(CharacterAlphabet::Explicit(
+                    vec!['a']
+                ))])
+                .with_opcodes(vec![
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Match
+                ])),
+            compile(regex_ast)
+        );
+    }
+
+    #[test]
+    fn should_compile_compound_character_group() {
+        use ast::*;
+        use relex_runtime::*;
+
+        // approximate to `^[az]`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(
+                    CharacterGroup::Items(vec![
+                        CharacterGroupItem::Char(Char('a')),
+                        CharacterGroupItem::Char(Char('z')),
+                    ]),
+                )),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::default()
+                .with_sets(vec![
+                    CharacterSet::inclusive(CharacterAlphabet::Explicit(vec!['a'],)),
+                    CharacterSet::inclusive(CharacterAlphabet::Explicit(vec!['z'],))
+                ])
+                .with_opcodes(vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(3))),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(4))),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(1)),
+                    Opcode::Match,
+                ])),
+            compile(regex_ast)
+        );
+    }
+
+    #[test]
+    fn should_compile_character_group_range() {
+        use ast::*;
+        use relex_runtime::*;
+
+        // approximate to `^[0-9]`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(
+                    CharacterGroup::Items(vec![CharacterGroupItem::CharacterRangeWithUpperBound(
+                        Char('0'),
+                        Char('9'),
+                    )]),
+                )),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::default()
+                .with_sets(vec![CharacterSet::inclusive(CharacterAlphabet::Range(
+                    '0'..='9'
+                )),])
                 .with_opcodes(vec![
                     Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
                     Opcode::Match,
