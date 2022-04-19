@@ -172,8 +172,7 @@ pub struct CharacterGroupNegativeModifier;
 pub enum CharacterGroupItem {
     CharacterClass(CharacterClass),
     CharacterClassFromUnicodeCategory(UnicodeCategoryName),
-    CharacterRangeWithUpperBound(Char, Char),
-    CharacterRange(Char),
+    CharacterRange(Char, Char),
     Char(Char),
 }
 
@@ -198,10 +197,7 @@ impl From<CharacterRange> for CharacterGroupItem {
             upper_bound,
         } = src;
 
-        match (lower_bound, upper_bound) {
-            (lower, Some(upper)) => Self::CharacterRangeWithUpperBound(lower, upper),
-            (lower, None) => Self::CharacterRange(lower),
-        }
+        Self::CharacterRange(lower_bound, upper_bound)
     }
 }
 
@@ -271,11 +267,11 @@ pub struct UnicodeCategoryName(pub Letters);
 
 pub struct CharacterRange {
     lower_bound: Char,
-    upper_bound: Option<Char>,
+    upper_bound: Char,
 }
 
 impl CharacterRange {
-    pub fn new(lower_bound: Char, upper_bound: Option<Char>) -> Self {
+    pub fn new(lower_bound: Char, upper_bound: Char) -> Self {
         Self {
             lower_bound,
             upper_bound,

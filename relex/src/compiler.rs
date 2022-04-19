@@ -443,12 +443,9 @@ fn character_group_item_to_set(cgi: ast::CharacterGroupItem) -> CharacterSet {
     match cgi {
         ast::CharacterGroupItem::CharacterClassFromUnicodeCategory(_) => unimplemented!(),
         ast::CharacterGroupItem::CharacterClass(cc) => character_class_to_set(cc),
-        ast::CharacterGroupItem::CharacterRangeWithUpperBound(Char(lower), Char(upper)) => {
+        ast::CharacterGroupItem::CharacterRange(Char(lower), Char(upper)) => {
             let alphabet = CharacterAlphabet::Range(lower..=upper);
             CharacterSet::inclusive(alphabet)
-        }
-        ast::CharacterGroupItem::CharacterRange(Char(c)) => {
-            CharacterSet::inclusive(CharacterAlphabet::Explicit(vec![c]))
         }
         ast::CharacterGroupItem::Char(Char(c)) => {
             CharacterSet::inclusive(CharacterAlphabet::Explicit(vec![c]))
@@ -1039,7 +1036,7 @@ mod tests {
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Match(Match::WithoutQuantifier {
                 item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(
-                    CharacterGroup::Items(vec![CharacterGroupItem::CharacterRangeWithUpperBound(
+                    CharacterGroup::Items(vec![CharacterGroupItem::CharacterRange(
                         Char('0'),
                         Char('9'),
                     )]),

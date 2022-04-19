@@ -62,7 +62,7 @@ CharacterClassAnyDecimalDigitInverted ::= "\D"
 CharacterClassFromUnicodeCategory ::= "\p{" UnicodeCategoryName "}"
 UnicodeCategoryName ::= Letters
 
-CharacterRange ::= Char ("-" Char)?
+CharacterRange ::= Char "-" Char
 
 
 /* Quantifiers 
