@@ -803,6 +803,31 @@ mod tests {
     }
 
     #[test]
+    fn should_evaluate_alternation_expression() {
+        let prog = Instructions::default().with_opcodes(vec![
+            Opcode::StartSave(InstStartSave::new(0)),
+            Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(4))),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Jmp(InstJmp::new(InstIndex::from(5))),
+            Opcode::Consume(InstConsume::new('b')),
+            Opcode::EndSave(InstEndSave::new(0)),
+            Opcode::Match,
+        ]);
+        let input_output = vec![
+            ("a", Some(vec![SaveGroupSlot::complete(0, 0, 1)])),
+            ("b", Some(vec![SaveGroupSlot::complete(0, 0, 1)])),
+            ("ab", Some(vec![SaveGroupSlot::complete(0, 0, 1)])),
+            ("ba", Some(vec![SaveGroupSlot::complete(0, 0, 1)])),
+            ("c", None),
+        ];
+
+        for (test_id, (input, expected_res)) in input_output.into_iter().enumerate() {
+            let res = run::<1>(&prog, input);
+            assert_eq!((test_id, expected_res), (test_id, res))
+        }
+    }
+
+    #[test]
     fn should_evaluate_set_match_expression() {
         let progs = vec![
             (
