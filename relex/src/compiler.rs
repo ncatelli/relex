@@ -482,13 +482,14 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
 
 fn character_group(cg: ast::CharacterGroup) -> Result<RelativeOpcodes, String> {
     match cg {
-        ast::CharacterGroup::NegatedItems(cgi) => todo!(),
-        ast::CharacterGroup::Items(cgi) => {
+        ast::CharacterGroup::NegatedItems(_cgi) => todo!(),
+        ast::CharacterGroup::Items(_cgi) => {
             todo!()
         }
     }
 }
 
+#[allow(dead_code)]
 fn character_group_item(cgi: ast::CharacterGroupItem) -> Result<RelativeOpcodes, String> {
     match cgi {
         ast::CharacterGroupItem::CharacterClassFromUnicodeCategory(_) => unimplemented!(),
