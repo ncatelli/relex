@@ -673,6 +673,13 @@ mod tests {
                     CharacterGroupItem::Char(Char('b')),
                 ]),
             ),
+            (
+                "^[a-z]",
+                CharacterGroup::Items(vec![CharacterGroupItem::CharacterRange(
+                    Char('a'),
+                    Char('z'),
+                )]),
+            ),
         ];
 
         for (test_id, (input, output)) in input_output.into_iter().enumerate() {
