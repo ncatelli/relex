@@ -61,12 +61,9 @@ pub fn linear_input_size_comparison_against_set_match(c: &mut Criterion) {
     let pad = "xy";
 
     let prog = Instructions::default()
-        .with_sets(vec![CharacterSet::Ranges(vec![
-            'a'..='z',
-            'A'..='Z',
-            '0'..='9',
-            '_'..='_',
-        ])])
+        .with_sets(vec![CharacterSet::inclusive(CharacterAlphabet::Ranges(
+            vec!['a'..='z', 'A'..='Z', '0'..='9', '_'..='_'],
+        ))])
         .with_opcodes(vec![
             Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
             Opcode::Any,

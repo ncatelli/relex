@@ -378,9 +378,57 @@ impl<CRSV: CharacterRangeSetVerifiable> CharacterRangeSetVerifiable for Vec<CRSV
     }
 }
 
-/// Represents a runtime dispatchable type for character sets.
+/// Defines that a given type can be converted into a character set.
+pub trait CharacterSetRepresentable: Into<CharacterSet> {}
+
+/// Representing a runtime-dispatchable set of characters by associating a sets
+/// membership to a character alphabet.
 #[derive(Debug, Clone, PartialEq)]
-pub enum CharacterSet {
+pub struct CharacterSet {
+    membership: SetMembership,
+    set: CharacterAlphabet,
+}
+
+impl CharacterSet {
+    pub fn inclusive(set: CharacterAlphabet) -> Self {
+        Self {
+            membership: SetMembership::Inclusive,
+            set,
+        }
+    }
+
+    pub fn exclusive(set: CharacterAlphabet) -> Self {
+        Self {
+            membership: SetMembership::Exclusive,
+            set,
+        }
+    }
+
+    pub fn invert_membership(self) -> Self {
+        let Self { membership, set } = self;
+
+        Self {
+            membership: match membership {
+                SetMembership::Inclusive => SetMembership::Exclusive,
+                SetMembership::Exclusive => SetMembership::Inclusive,
+            },
+            set,
+        }
+    }
+}
+
+impl CharacterRangeSetVerifiable for CharacterSet {
+    fn in_set(&self, value: char) -> bool {
+        match &self.membership {
+            SetMembership::Inclusive => self.set.in_set(value),
+            SetMembership::Exclusive => self.set.not_in_set(value),
+        }
+    }
+}
+
+/// Represents a runtime dispatchable set of characters.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CharacterAlphabet {
     /// Represents a range of values i.e. `0-9`, `a-z`, `A-Z`, etc...
     Range(std::ops::RangeInclusive<char>),
     /// Represents an explicitly defined set of values. i.e. `[a,b,z]`, `[1,2,7]`
@@ -389,12 +437,30 @@ pub enum CharacterSet {
     Ranges(Vec<std::ops::RangeInclusive<char>>),
 }
 
-impl CharacterRangeSetVerifiable for CharacterSet {
+impl CharacterAlphabet {
+    /// Joins a group of character sets into a single `Ranges` variant character set.
+    pub fn join(sets: Vec<Self>) -> CharacterAlphabet {
+        let ranges = sets
+            .into_iter()
+            .flat_map(|set| match set {
+                CharacterAlphabet::Range(r) => vec![r],
+                CharacterAlphabet::Ranges(ranges) => ranges,
+                CharacterAlphabet::Explicit(explicit_chars) => {
+                    explicit_chars.into_iter().map(|c| c..=c).collect()
+                }
+            })
+            .collect();
+
+        CharacterAlphabet::Ranges(ranges)
+    }
+}
+
+impl CharacterRangeSetVerifiable for CharacterAlphabet {
     fn in_set(&self, value: char) -> bool {
         match self {
-            CharacterSet::Range(r) => r.in_set(value),
-            CharacterSet::Explicit(v) => v.in_set(value),
-            CharacterSet::Ranges(ranges) => ranges.in_set(value),
+            CharacterAlphabet::Range(r) => r.in_set(value),
+            CharacterAlphabet::Explicit(v) => v.in_set(value),
+            CharacterAlphabet::Ranges(ranges) => ranges.in_set(value),
         }
     }
 }
@@ -415,25 +481,16 @@ pub enum SetMembership {
 /// characters. This functions as a brevity tool to prevent long alternations.
 #[derive(Debug, Clone, PartialEq)]
 pub struct InstConsumeSet {
-    pub membership: SetMembership,
     pub idx: usize,
 }
 
 impl InstConsumeSet {
-    #[must_use]
-    pub fn member_of(idx: usize) -> Self {
-        Self {
-            membership: SetMembership::Inclusive,
-            idx,
-        }
+    pub fn new(idx: usize) -> Self {
+        Self::member_of(idx)
     }
 
-    #[must_use]
-    pub fn exclusive(idx: usize) -> Self {
-        Self {
-            membership: SetMembership::Exclusive,
-            idx,
-        }
+    pub fn member_of(idx: usize) -> Self {
+        Self { idx }
     }
 }
 
@@ -705,17 +762,10 @@ pub fn run<const SG: usize>(program: &Instructions, input: &str) -> Option<Vec<S
                     continue;
                 }
 
-                Some(Opcode::ConsumeSet(InstConsumeSet {
-                    membership: inclusivity,
-                    idx: set_idx,
-                })) if next_char.map_or(false, |c| match inclusivity {
-                    SetMembership::Inclusive => {
+                Some(Opcode::ConsumeSet(InstConsumeSet { idx: set_idx }))
+                    if next_char.map_or(false, |c| {
                         sets.get(*set_idx).map_or(false, |set| set.in_set(c))
-                    }
-                    SetMembership::Exclusive => {
-                        sets.get(*set_idx).map_or(false, |set| set.not_in_set(c))
-                    }
-                }) =>
+                    }) =>
                 {
                     let thread_local_save_group =
                         if let SaveGroup::Allocated { slot_id } = save_group {
@@ -832,35 +882,39 @@ mod tests {
         let progs = vec![
             (
                 Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
-                Opcode::ConsumeSet(InstConsumeSet::member_of(2)),
-            ),
-            (None, Opcode::ConsumeSet(InstConsumeSet::member_of(3))),
-            (
-                Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
-                Opcode::ConsumeSet(InstConsumeSet::exclusive(3)),
-            ),
-            (None, Opcode::ConsumeSet(InstConsumeSet::exclusive(2))),
-            (
-                Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
                 Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
             ),
             (None, Opcode::ConsumeSet(InstConsumeSet::member_of(1))),
             (
                 Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
-                Opcode::ConsumeSet(InstConsumeSet::exclusive(1)),
+                Opcode::ConsumeSet(InstConsumeSet::member_of(3)),
             ),
-            (None, Opcode::ConsumeSet(InstConsumeSet::exclusive(0))),
+            (None, Opcode::ConsumeSet(InstConsumeSet::member_of(2))),
+            (
+                Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
+                Opcode::ConsumeSet(InstConsumeSet::member_of(4)),
+            ),
+            (None, Opcode::ConsumeSet(InstConsumeSet::member_of(5))),
+            (
+                Some(vec![SaveGroupSlot::complete(0, 0, 1)]),
+                Opcode::ConsumeSet(InstConsumeSet::member_of(7)),
+            ),
+            (None, Opcode::ConsumeSet(InstConsumeSet::member_of(6))),
         ];
 
         let input = "aab";
 
-        for (expected_res, consume_set_inst) in progs {
+        for (test_id, (expected_res, consume_set_inst)) in progs.into_iter().enumerate() {
             let prog = Instructions::default()
                 .with_sets(vec![
-                    CharacterSet::Explicit(vec!['a', 'b']),
-                    CharacterSet::Explicit(vec!['x', 'y', 'z']),
-                    CharacterSet::Range('a'..='z'),
-                    CharacterSet::Range('x'..='z'),
+                    CharacterSet::inclusive(CharacterAlphabet::Explicit(vec!['a', 'b'])),
+                    CharacterSet::exclusive(CharacterAlphabet::Explicit(vec!['a', 'b'])),
+                    CharacterSet::inclusive(CharacterAlphabet::Explicit(vec!['x', 'y', 'z'])),
+                    CharacterSet::exclusive(CharacterAlphabet::Explicit(vec!['x', 'y', 'z'])),
+                    CharacterSet::inclusive(CharacterAlphabet::Range('a'..='z')),
+                    CharacterSet::exclusive(CharacterAlphabet::Range('a'..='z')),
+                    CharacterSet::inclusive(CharacterAlphabet::Range('x'..='z')),
+                    CharacterSet::exclusive(CharacterAlphabet::Range('x'..='z')),
                 ])
                 .with_opcodes(vec![
                     Opcode::StartSave(InstStartSave::new(0)),
@@ -869,7 +923,7 @@ mod tests {
                     Opcode::Match,
                 ]);
             let res = run::<1>(&prog, input);
-            assert_eq!(expected_res, res)
+            assert_eq!((test_id, expected_res), (test_id, res))
         }
     }
 

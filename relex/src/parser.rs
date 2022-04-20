@@ -122,8 +122,8 @@ fn r#match<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Match> {
 }
 
 fn match_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::MatchItem> {
-    parcel::or(match_any_character().map(Into::into), || {
-        parcel::or(match_character_class().map(Into::into), || {
+    parcel::or(match_character_class().map(Into::into), || {
+        parcel::or(match_any_character().map(Into::into), || {
             match_character().map(Into::into)
         })
     })
@@ -161,7 +161,7 @@ fn match_character<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Ma
 fn character_group<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CharacterGroup> {
     parcel::join(
         parcel::right(parcel::join(
-            expect_character('['),
+            expect_character('[').map(|c| c),
             parcel::optional(character_group_negative_modifier())
                 .map(|negation| negation.is_some()),
         )),
@@ -178,7 +178,7 @@ fn character_group<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Ch
 
 fn character_group_negative_modifier<'a>(
 ) -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CharacterGroupNegativeModifier> {
-    parcel::optional(expect_character('^')).map(|_| ast::CharacterGroupNegativeModifier)
+    expect_character('^').map(|_| ast::CharacterGroupNegativeModifier)
 }
 
 fn character_group_item<'a>(
@@ -186,7 +186,11 @@ fn character_group_item<'a>(
     parcel::or(character_class().map(Into::into), || {
         parcel::or(
             character_class_from_unicode_category().map(Into::into),
-            || parcel::or(character_range().map(Into::into), || char().map(Into::into)),
+            || {
+                parcel::or(character_range().map(Into::into), || {
+                    char().predicate(|ast::Char(c)| *c != ']').map(Into::into)
+                })
+            },
         )
     })
 }
@@ -244,7 +248,7 @@ fn unicode_category_name<'a>(
 fn character_range<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CharacterRange> {
     parcel::join(
         char(),
-        parcel::optional(parcel::right(parcel::join(expect_character('-'), char()))),
+        parcel::right(parcel::join(expect_character('-'), char())),
     )
     .map(|(lower_bound, upper_bound)| ast::CharacterRange::new(lower_bound, upper_bound))
 }
@@ -650,6 +654,59 @@ mod tests {
                     })])
                 ]))),
                 parse(&input)
+            )
+        }
+    }
+
+    #[test]
+    fn should_parse_character_group_items() {
+        use ast::*;
+        let input_output = vec![
+            (
+                "^[a]",
+                CharacterGroup::Items(vec![CharacterGroupItem::Char(Char('a'))]),
+            ),
+            (
+                "^[ab]",
+                CharacterGroup::Items(vec![
+                    CharacterGroupItem::Char(Char('a')),
+                    CharacterGroupItem::Char(Char('b')),
+                ]),
+            ),
+            (
+                "^[a-z]",
+                CharacterGroup::Items(vec![CharacterGroupItem::CharacterRange(
+                    Char('a'),
+                    Char('z'),
+                )]),
+            ),
+            (
+                "^[abc0-9]",
+                CharacterGroup::Items(vec![
+                    CharacterGroupItem::Char(Char('a')),
+                    CharacterGroupItem::Char(Char('b')),
+                    CharacterGroupItem::Char(Char('c')),
+                    CharacterGroupItem::CharacterRange(Char('0'), Char('9')),
+                ]),
+            ),
+        ];
+
+        for (test_id, (input, output)) in input_output.into_iter().enumerate() {
+            let input = input.chars().enumerate().collect::<Vec<(usize, char)>>();
+
+            let res = parse(&input);
+            assert_eq!(
+                (
+                    test_id,
+                    Ok(Regex::StartOfStringAnchored(Expression(vec![
+                        SubExpression(vec![SubExpressionItem::Match(Match::WithoutQuantifier {
+                            item: MatchItem::MatchCharacterClass(
+                                MatchCharacterClass::CharacterGroup(output)
+                            )
+                        }),])
+                    ])))
+                ),
+                (test_id, res)
             )
         }
     }

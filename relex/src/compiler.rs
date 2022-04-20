@@ -1,13 +1,6 @@
 use super::ast;
 use relex_runtime::*;
 
-/// A representation of a AnyWordClass character class, in range format.
-const ANY_WORD_CLASS: [std::ops::RangeInclusive<char>; 4] =
-    ['a'..='z', 'A'..='Z', '0'..='9', '_'..='_'];
-
-/// A representation of a AnyDecimalDigitClass character class, in range format.
-const ANY_DECIMAL_DIGIT_CLASS: std::ops::RangeInclusive<char> = '0'..='9';
-
 /// A internal representation of the `relex_runtime::Opcode` type, with relative
 /// addressing.
 ///
@@ -19,7 +12,7 @@ const ANY_DECIMAL_DIGIT_CLASS: std::ops::RangeInclusive<char> = '0'..='9';
 enum RelativeOpcode {
     Any,
     Consume(char),
-    ConsumeSet(SetMembership, CharacterSet),
+    ConsumeSet(CharacterSet),
     Split(isize, isize),
     Jmp(isize),
     StartSave(usize),
@@ -51,7 +44,7 @@ impl RelativeOpcode {
             RelativeOpcode::StartSave(slot) => Some(Opcode::StartSave(InstStartSave::new(slot))),
             RelativeOpcode::EndSave(slot) => Some(Opcode::EndSave(InstEndSave::new(slot))),
             RelativeOpcode::Match => Some(Opcode::Match),
-            RelativeOpcode::ConsumeSet(set_membership, char_set) => {
+            RelativeOpcode::ConsumeSet(char_set) => {
                 let found = sets.iter().position(|set| set == &char_set);
                 let set_idx = match found {
                     Some(set_idx) => set_idx,
@@ -62,10 +55,7 @@ impl RelativeOpcode {
                     }
                 };
 
-                Some(Opcode::ConsumeSet(InstConsumeSet {
-                    membership: set_membership,
-                    idx: set_idx,
-                }))
+                Some(Opcode::ConsumeSet(InstConsumeSet { idx: set_idx }))
             }
         }
     }
@@ -119,65 +109,13 @@ pub fn compile(regex_ast: ast::Regex) -> Result<Instructions, String> {
 
 fn expression(expr: ast::Expression) -> Result<RelativeOpcodes, String> {
     let ast::Expression(subexprs) = expr;
-    let subexpr_cnt = subexprs.len();
 
     let compiled_subexprs = subexprs
         .into_iter()
         .map(subexpression)
         .collect::<Result<Vec<_>, _>>()?;
 
-    let length_of_each_subexpr: Vec<_> = compiled_subexprs
-        .iter()
-        .enumerate()
-        .map(|(idx, subexpr)| ((idx + 1 == subexpr_cnt), subexpr))
-        .map(|(is_last, subexpr)| {
-            // last alternation doesn't require a split prefix and jump suffix
-            if is_last {
-                subexpr.len()
-            } else {
-                subexpr.len() + 2
-            }
-        })
-        .collect();
-
-    let total_length_of_compiled_expr: usize = length_of_each_subexpr.iter().sum();
-    let start_end_offsets_by_subexpr: Vec<(usize, usize)> = length_of_each_subexpr
-        .iter()
-        .fold(
-            // add 1 to set end at first instruction of next expr
-            (total_length_of_compiled_expr + 1, vec![]),
-            |(offset_to_end, mut acc), &subexpr_len| {
-                let new_offset_to_end = offset_to_end - subexpr_len;
-
-                acc.push((subexpr_len, new_offset_to_end));
-                (new_offset_to_end, acc)
-            },
-        )
-        .1;
-
-    let compiled_subexpressions_with_applied_alternations = compiled_subexprs
-        .into_iter()
-        .zip(start_end_offsets_by_subexpr.into_iter())
-        .enumerate()
-        .map(|(idx, (opcodes, start_end_offsets))| {
-            let optional_next_offsets = ((idx + 1) != subexpr_cnt)
-                .then(|| start_end_offsets)
-                .map(|(start, end)| (start as isize, end as isize));
-            (optional_next_offsets, opcodes)
-        })
-        .flat_map(|(start_of_next, ops)| match start_of_next {
-            Some((start_of_next_subexpr_offset, end_of_expr_offset)) => {
-                [RelativeOpcode::Split(1, start_of_next_subexpr_offset)]
-                    .into_iter()
-                    .chain(ops.into_iter())
-                    .chain([RelativeOpcode::Jmp(end_of_expr_offset)].into_iter())
-                    .collect()
-            }
-            None => ops,
-        })
-        .collect();
-
-    Ok(compiled_subexpressions_with_applied_alternations)
+    alternations_for_supplied_relative_opcodes(compiled_subexprs)
 }
 
 fn subexpression(subexpr: ast::SubExpression) -> Result<RelativeOpcodes, String> {
@@ -197,44 +135,67 @@ fn subexpression(subexpr: ast::SubExpression) -> Result<RelativeOpcodes, String>
 
 macro_rules! generate_range_quantifier_block {
     (eager, $min:expr, $consumer:expr) => {
-        vec![$consumer; $min as usize]
+        $consumer
+            .clone()
             .into_iter()
-            .chain(
-                vec![
-                    RelativeOpcode::Split(1, 3),
-                    $consumer,
-                    RelativeOpcode::Jmp(-2),
-                ]
-                .into_iter(),
-            )
+            .cycle()
+            .take($consumer.len() * $min as usize)
+            .into_iter()
+            // jump past end of expression
+            .chain(vec![RelativeOpcode::Split(1, (($consumer.len() + 2) as isize))].into_iter())
+            .chain($consumer.into_iter())
+            // return to split
+            .chain(vec![RelativeOpcode::Jmp(-($consumer.len() as isize) - 1)].into_iter())
             .collect()
     };
 
     (lazy, $min:expr, $consumer:expr) => {
-        vec![$consumer; $min as usize]
+        $consumer
+            .clone()
             .into_iter()
-            .chain(
-                vec![
-                    RelativeOpcode::Split(3, 1),
-                    $consumer,
-                    RelativeOpcode::Jmp(-2),
-                ]
-                .into_iter(),
-            )
+            .cycle()
+            .take($consumer.len() * $min as usize)
+            .into_iter()
+            // jump past end of expression
+            .chain(vec![RelativeOpcode::Split((($consumer.len() + 2) as isize), 1)].into_iter())
+            .chain($consumer.into_iter())
+            // return to split
+            .chain(vec![RelativeOpcode::Jmp(-($consumer.len() as isize) - 1)].into_iter())
             .collect()
     };
 
     (eager, $min:expr, $max:expr, $consumer:expr) => {
         (0..($max - $min))
-            .flat_map(|_| vec![$consumer, RelativeOpcode::Split(1, 2)])
-            .chain(vec![$consumer; $min as usize].into_iter())
+            .flat_map(|_| {
+                $consumer.clone().into_iter().chain(
+                    vec![RelativeOpcode::Split(1, ($consumer.len() as isize) + 1)].into_iter(),
+                )
+            })
+            .chain(
+                $consumer
+                    .clone()
+                    .into_iter()
+                    .cycle()
+                    .take($consumer.len() * $min as usize)
+                    .into_iter(),
+            )
             .collect()
     };
 
     (lazy, $min:expr, $max:expr, $consumer:expr) => {
         (0..($max - $min))
-            .flat_map(|_| vec![$consumer, RelativeOpcode::Split(2, 1)])
-            .chain(vec![$consumer; $min as usize].into_iter())
+            .flat_map(|_| {
+                $consumer.clone().into_iter().chain(
+                    vec![RelativeOpcode::Split(($consumer.len() as isize) + 1, 1)].into_iter(),
+                )
+            })
+            .chain(
+                $consumer
+                    .clone()
+                    .into_iter()
+                    .cycle()
+                    .take($consumer.len() * $min as usize),
+            )
             .collect()
     };
 }
@@ -272,7 +233,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             eager,
             0,
-            RelativeOpcode::Any
+            vec![RelativeOpcode::Any]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
@@ -280,7 +241,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             lazy,
             0,
-            RelativeOpcode::Any
+            vec![RelativeOpcode::Any]
         )),
 
         Match::WithQuantifier {
@@ -289,7 +250,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             eager,
             0,
-            RelativeOpcode::Consume(c)
+            vec![RelativeOpcode::Consume(c)]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
@@ -297,7 +258,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             lazy,
             0,
-            RelativeOpcode::Consume(c)
+            vec![RelativeOpcode::Consume(c)]
         )),
 
         // match one or more
@@ -307,7 +268,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             eager,
             1,
-            RelativeOpcode::Any
+            vec![RelativeOpcode::Any]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
@@ -315,7 +276,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             lazy,
             1,
-            RelativeOpcode::Any
+            vec![RelativeOpcode::Any]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
@@ -323,7 +284,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             eager,
             1,
-            RelativeOpcode::Consume(c)
+            vec![RelativeOpcode::Consume(c)]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
@@ -331,7 +292,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             lazy,
             1,
-            RelativeOpcode::Consume(c)
+            vec![RelativeOpcode::Consume(c)]
         )),
 
         // match exact
@@ -359,7 +320,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             eager,
             cnt,
-            RelativeOpcode::Any
+            vec![RelativeOpcode::Any]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
@@ -367,7 +328,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             eager,
             cnt,
-            RelativeOpcode::Consume(c)
+            vec![RelativeOpcode::Consume(c)]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
@@ -375,7 +336,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             lazy,
             cnt,
-            RelativeOpcode::Any
+            vec![RelativeOpcode::Any]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
@@ -383,7 +344,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             lazy,
             cnt,
-            RelativeOpcode::Consume(c)
+            vec![RelativeOpcode::Consume(c)]
         )),
 
         // match between range
@@ -398,7 +359,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             eager,
             lower,
             upper,
-            RelativeOpcode::Any
+            vec![RelativeOpcode::Any]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
@@ -411,7 +372,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             lazy,
             lower,
             upper,
-            RelativeOpcode::Any
+            vec![RelativeOpcode::Any]
         )),
         Match::WithoutQuantifier {
             item: MatchItem::MatchAnyCharacter,
@@ -428,7 +389,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             eager,
             lower,
             upper,
-            RelativeOpcode::Consume(c)
+            vec![RelativeOpcode::Consume(c)]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
@@ -441,7 +402,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             lazy,
             lower,
             upper,
-            RelativeOpcode::Consume(c)
+            vec![RelativeOpcode::Consume(c)]
         )),
         Match::WithoutQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
@@ -481,46 +442,172 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
 }
 
 fn character_group(cg: ast::CharacterGroup) -> Result<RelativeOpcodes, String> {
-    match cg {
-        ast::CharacterGroup::NegatedItems(_cgi) => todo!(),
-        ast::CharacterGroup::Items(_cgi) => {
-            todo!()
+    let sets: Vec<RelativeOpcodes> = match cg {
+        ast::CharacterGroup::NegatedItems(cgis) => cgis
+            .into_iter()
+            .map(character_group_item_to_set)
+            .map(|set| set.invert_membership())
+            .map(|set| vec![RelativeOpcode::ConsumeSet(set)])
+            .collect(),
+
+        ast::CharacterGroup::Items(cgis) => cgis
+            .into_iter()
+            .map(character_group_item_to_set)
+            .map(|set| vec![RelativeOpcode::ConsumeSet(set)])
+            .collect(),
+    };
+
+    alternations_for_supplied_relative_opcodes(sets)
+}
+
+fn character_group_item_to_set(cgi: ast::CharacterGroupItem) -> CharacterSet {
+    use ast::Char;
+
+    match cgi {
+        ast::CharacterGroupItem::CharacterClassFromUnicodeCategory(_) => unimplemented!(),
+        ast::CharacterGroupItem::CharacterClass(cc) => character_class_to_set(cc),
+        ast::CharacterGroupItem::CharacterRange(Char(lower), Char(upper)) => {
+            let alphabet = CharacterAlphabet::Range(lower..=upper);
+            CharacterSet::inclusive(alphabet)
+        }
+        ast::CharacterGroupItem::Char(Char(c)) => {
+            CharacterSet::inclusive(CharacterAlphabet::Explicit(vec![c]))
         }
     }
 }
 
-#[allow(dead_code)]
-fn character_group_item(cgi: ast::CharacterGroupItem) -> Result<RelativeOpcodes, String> {
-    match cgi {
-        ast::CharacterGroupItem::CharacterClassFromUnicodeCategory(_) => unimplemented!(),
-        ast::CharacterGroupItem::CharacterClass(cc) => character_class(cc),
-        ast::CharacterGroupItem::CharacterRangeWithUpperBound(_, _) => todo!(),
-        ast::CharacterGroupItem::CharacterRange(_) => todo!(),
-        ast::CharacterGroupItem::Char(ast::Char(c)) => Ok(vec![RelativeOpcode::Consume(c)]),
+// character classes
+
+/// A representation of a AnyWordClass character class, in character set format.
+pub struct AnyWordClass;
+
+impl AnyWordClass {
+    const RANGES: [std::ops::RangeInclusive<char>; 4] =
+        ['a'..='z', 'A'..='Z', '0'..='9', '_'..='_'];
+}
+
+impl CharacterSetRepresentable for AnyWordClass {}
+
+impl From<AnyWordClass> for CharacterSet {
+    fn from(_: AnyWordClass) -> Self {
+        CharacterSet::inclusive(CharacterAlphabet::Ranges(AnyWordClass::RANGES.to_vec()))
+    }
+}
+
+/// A representation of a AnyWordClassInverted character class, in character
+/// set format.
+pub struct AnyWordClassInverted;
+
+impl CharacterSetRepresentable for AnyWordClassInverted {}
+
+impl From<AnyWordClassInverted> for CharacterSet {
+    fn from(_: AnyWordClassInverted) -> Self {
+        CharacterSet::exclusive(CharacterAlphabet::Ranges(AnyWordClass::RANGES.to_vec()))
+    }
+}
+
+/// A representation of a AnyDecimalDigitClass character class, in character
+/// set format.
+pub struct AnyDecimalDigitClass;
+
+impl AnyDecimalDigitClass {
+    const RANGE: std::ops::RangeInclusive<char> = '0'..='9';
+}
+
+impl CharacterSetRepresentable for AnyDecimalDigitClass {}
+
+impl From<AnyDecimalDigitClass> for CharacterSet {
+    fn from(_: AnyDecimalDigitClass) -> Self {
+        CharacterSet::inclusive(CharacterAlphabet::Range(AnyDecimalDigitClass::RANGE))
+    }
+}
+
+/// A representation of a AnyDecimalDigitClassInverted character class, in
+/// character set format.
+pub struct AnyDecimalDigitClassInverted;
+
+impl CharacterSetRepresentable for AnyDecimalDigitClassInverted {}
+
+impl From<AnyDecimalDigitClassInverted> for CharacterSet {
+    fn from(_: AnyDecimalDigitClassInverted) -> Self {
+        CharacterSet::exclusive(CharacterAlphabet::Range(AnyDecimalDigitClass::RANGE))
     }
 }
 
 fn character_class(cc: ast::CharacterClass) -> Result<RelativeOpcodes, String> {
-    let (set_membership, char_set) = match cc {
-        ast::CharacterClass::AnyWord => (
-            SetMembership::Inclusive,
-            CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()),
-        ),
-        ast::CharacterClass::AnyWordInverted => (
-            SetMembership::Exclusive,
-            CharacterSet::Ranges(ANY_WORD_CLASS.to_vec()),
-        ),
-        ast::CharacterClass::AnyDecimalDigit => (
-            SetMembership::Inclusive,
-            CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS),
-        ),
-        ast::CharacterClass::AnyDecimalDigitInverted => (
-            SetMembership::Exclusive,
-            CharacterSet::Range(ANY_DECIMAL_DIGIT_CLASS),
-        ),
-    };
+    let set = character_class_to_set(cc);
 
-    Ok(vec![RelativeOpcode::ConsumeSet(set_membership, char_set)])
+    Ok(vec![RelativeOpcode::ConsumeSet(set)])
+}
+
+fn character_class_to_set(cc: ast::CharacterClass) -> CharacterSet {
+    match cc {
+        ast::CharacterClass::AnyWord => AnyWordClass.into(),
+        ast::CharacterClass::AnyWordInverted => AnyWordClassInverted.into(),
+
+        ast::CharacterClass::AnyDecimalDigit => AnyDecimalDigitClass.into(),
+        ast::CharacterClass::AnyDecimalDigitInverted => AnyDecimalDigitClassInverted.into(),
+    }
+}
+
+/// Generates alternations from a block of relative operations.
+fn alternations_for_supplied_relative_opcodes(
+    rel_ops: Vec<RelativeOpcodes>,
+) -> Result<RelativeOpcodes, String> {
+    let subexpr_cnt = rel_ops.len();
+
+    let length_of_rel_ops: Vec<_> = rel_ops
+        .iter()
+        .enumerate()
+        .map(|(idx, subexpr)| ((idx + 1 == subexpr_cnt), subexpr))
+        .map(|(is_last, subexpr)| {
+            // last alternation doesn't require a split prefix and jump suffix
+            if is_last {
+                subexpr.len()
+            } else {
+                subexpr.len() + 2
+            }
+        })
+        .collect();
+
+    let total_length_of_compiled_expr: usize = length_of_rel_ops.iter().sum();
+    let start_end_offsets_by_subexpr: Vec<(usize, usize)> = length_of_rel_ops
+        .iter()
+        .fold(
+            // add 1 to set end at first instruction of next expr
+            (total_length_of_compiled_expr + 1, vec![]),
+            |(offset_to_end, mut acc), &subexpr_len| {
+                let new_offset_to_end = offset_to_end - subexpr_len;
+
+                acc.push((subexpr_len, new_offset_to_end));
+                (new_offset_to_end, acc)
+            },
+        )
+        .1;
+
+    let compiled_ops_with_applied_alternations = rel_ops
+        .into_iter()
+        .zip(start_end_offsets_by_subexpr.into_iter())
+        .enumerate()
+        .map(|(idx, (opcodes, start_end_offsets))| {
+            let optional_next_offsets = ((idx + 1) != subexpr_cnt)
+                .then(|| start_end_offsets)
+                .map(|(start, end)| (start as isize, end as isize));
+            (optional_next_offsets, opcodes)
+        })
+        .flat_map(|(start_of_next, ops)| match start_of_next {
+            Some((start_of_next_subexpr_offset, end_of_expr_offset)) => {
+                [RelativeOpcode::Split(1, start_of_next_subexpr_offset)]
+                    .into_iter()
+                    .chain(ops.into_iter())
+                    .chain([RelativeOpcode::Jmp(end_of_expr_offset)].into_iter())
+                    .collect()
+            }
+            None => ops,
+        })
+        .collect();
+
+    Ok(compiled_ops_with_applied_alternations)
 }
 
 #[cfg(test)]
@@ -870,12 +957,9 @@ mod tests {
 
         assert_eq!(
             Ok(Instructions::default()
-                .with_sets(vec![CharacterSet::Ranges(vec![
-                    'a'..='z',
-                    'A'..='Z',
-                    '0'..='9',
-                    '_'..='_',
-                ])])
+                .with_sets(vec![CharacterSet::inclusive(CharacterAlphabet::Ranges(
+                    vec!['a'..='z', 'A'..='Z', '0'..='9', '_'..='_',]
+                ))])
                 .with_opcodes(vec![
                     Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
                     Opcode::Match,
@@ -894,7 +978,100 @@ mod tests {
 
         assert_eq!(
             Ok(Instructions::default()
-                .with_sets(vec![CharacterSet::Range('0'..='9')])
+                .with_sets(vec![CharacterSet::inclusive(CharacterAlphabet::Range(
+                    '0'..='9'
+                ))])
+                .with_opcodes(vec![
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Match,
+                ])),
+            compile(regex_ast)
+        );
+    }
+
+    #[test]
+    fn should_compile_single_character_character_group() {
+        use ast::*;
+        use relex_runtime::*;
+
+        // approximate to `^[a]`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(
+                    CharacterGroup::Items(vec![CharacterGroupItem::Char(Char('a'))]),
+                )),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::default()
+                .with_sets(vec![CharacterSet::inclusive(CharacterAlphabet::Explicit(
+                    vec!['a']
+                ))])
+                .with_opcodes(vec![
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Match
+                ])),
+            compile(regex_ast)
+        );
+    }
+
+    #[test]
+    fn should_compile_compound_character_group() {
+        use ast::*;
+        use relex_runtime::*;
+
+        // approximate to `^[az]`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(
+                    CharacterGroup::Items(vec![
+                        CharacterGroupItem::Char(Char('a')),
+                        CharacterGroupItem::Char(Char('z')),
+                    ]),
+                )),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::default()
+                .with_sets(vec![
+                    CharacterSet::inclusive(CharacterAlphabet::Explicit(vec!['a'],)),
+                    CharacterSet::inclusive(CharacterAlphabet::Explicit(vec!['z'],))
+                ])
+                .with_opcodes(vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(3))),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(4))),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(1)),
+                    Opcode::Match,
+                ])),
+            compile(regex_ast)
+        );
+    }
+
+    #[test]
+    fn should_compile_character_group_range() {
+        use ast::*;
+        use relex_runtime::*;
+
+        // approximate to `^[0-9]`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithoutQuantifier {
+                item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(
+                    CharacterGroup::Items(vec![CharacterGroupItem::CharacterRange(
+                        Char('0'),
+                        Char('9'),
+                    )]),
+                )),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::default()
+                .with_sets(vec![CharacterSet::inclusive(CharacterAlphabet::Range(
+                    '0'..='9'
+                )),])
                 .with_opcodes(vec![
                     Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
                     Opcode::Match,
