@@ -135,44 +135,67 @@ fn subexpression(subexpr: ast::SubExpression) -> Result<RelativeOpcodes, String>
 
 macro_rules! generate_range_quantifier_block {
     (eager, $min:expr, $consumer:expr) => {
-        vec![$consumer; $min as usize]
+        $consumer
+            .clone()
             .into_iter()
-            .chain(
-                vec![
-                    RelativeOpcode::Split(1, 3),
-                    $consumer,
-                    RelativeOpcode::Jmp(-2),
-                ]
-                .into_iter(),
-            )
+            .cycle()
+            .take($consumer.len() * $min as usize)
+            .into_iter()
+            // jump past end of expression
+            .chain(vec![RelativeOpcode::Split(1, (($consumer.len() + 2) as isize))].into_iter())
+            .chain($consumer.into_iter())
+            // return to split
+            .chain(vec![RelativeOpcode::Jmp(-($consumer.len() as isize) - 1)].into_iter())
             .collect()
     };
 
     (lazy, $min:expr, $consumer:expr) => {
-        vec![$consumer; $min as usize]
+        $consumer
+            .clone()
             .into_iter()
-            .chain(
-                vec![
-                    RelativeOpcode::Split(3, 1),
-                    $consumer,
-                    RelativeOpcode::Jmp(-2),
-                ]
-                .into_iter(),
-            )
+            .cycle()
+            .take($consumer.len() * $min as usize)
+            .into_iter()
+            // jump past end of expression
+            .chain(vec![RelativeOpcode::Split((($consumer.len() + 2) as isize), 1)].into_iter())
+            .chain($consumer.into_iter())
+            // return to split
+            .chain(vec![RelativeOpcode::Jmp(-($consumer.len() as isize) - 1)].into_iter())
             .collect()
     };
 
     (eager, $min:expr, $max:expr, $consumer:expr) => {
         (0..($max - $min))
-            .flat_map(|_| vec![$consumer, RelativeOpcode::Split(1, 2)])
-            .chain(vec![$consumer; $min as usize].into_iter())
+            .flat_map(|_| {
+                $consumer.clone().into_iter().chain(
+                    vec![RelativeOpcode::Split(1, ($consumer.len() as isize) + 1)].into_iter(),
+                )
+            })
+            .chain(
+                $consumer
+                    .clone()
+                    .into_iter()
+                    .cycle()
+                    .take($consumer.len() * $min as usize)
+                    .into_iter(),
+            )
             .collect()
     };
 
     (lazy, $min:expr, $max:expr, $consumer:expr) => {
         (0..($max - $min))
-            .flat_map(|_| vec![$consumer, RelativeOpcode::Split(2, 1)])
-            .chain(vec![$consumer; $min as usize].into_iter())
+            .flat_map(|_| {
+                $consumer.clone().into_iter().chain(
+                    vec![RelativeOpcode::Split(($consumer.len() as isize) + 1, 1)].into_iter(),
+                )
+            })
+            .chain(
+                $consumer
+                    .clone()
+                    .into_iter()
+                    .cycle()
+                    .take($consumer.len() * $min as usize),
+            )
             .collect()
     };
 }
@@ -210,7 +233,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             eager,
             0,
-            RelativeOpcode::Any
+            vec![RelativeOpcode::Any]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
@@ -218,7 +241,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             lazy,
             0,
-            RelativeOpcode::Any
+            vec![RelativeOpcode::Any]
         )),
 
         Match::WithQuantifier {
@@ -227,7 +250,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             eager,
             0,
-            RelativeOpcode::Consume(c)
+            vec![RelativeOpcode::Consume(c)]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
@@ -235,7 +258,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             lazy,
             0,
-            RelativeOpcode::Consume(c)
+            vec![RelativeOpcode::Consume(c)]
         )),
 
         // match one or more
@@ -245,7 +268,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             eager,
             1,
-            RelativeOpcode::Any
+            vec![RelativeOpcode::Any]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
@@ -253,7 +276,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             lazy,
             1,
-            RelativeOpcode::Any
+            vec![RelativeOpcode::Any]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
@@ -261,7 +284,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             eager,
             1,
-            RelativeOpcode::Consume(c)
+            vec![RelativeOpcode::Consume(c)]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
@@ -269,7 +292,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             lazy,
             1,
-            RelativeOpcode::Consume(c)
+            vec![RelativeOpcode::Consume(c)]
         )),
 
         // match exact
@@ -297,7 +320,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             eager,
             cnt,
-            RelativeOpcode::Any
+            vec![RelativeOpcode::Any]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
@@ -305,7 +328,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             eager,
             cnt,
-            RelativeOpcode::Consume(c)
+            vec![RelativeOpcode::Consume(c)]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
@@ -313,7 +336,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             lazy,
             cnt,
-            RelativeOpcode::Any
+            vec![RelativeOpcode::Any]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
@@ -321,7 +344,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         } => Ok(generate_range_quantifier_block!(
             lazy,
             cnt,
-            RelativeOpcode::Consume(c)
+            vec![RelativeOpcode::Consume(c)]
         )),
 
         // match between range
@@ -336,7 +359,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             eager,
             lower,
             upper,
-            RelativeOpcode::Any
+            vec![RelativeOpcode::Any]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
@@ -349,7 +372,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             lazy,
             lower,
             upper,
-            RelativeOpcode::Any
+            vec![RelativeOpcode::Any]
         )),
         Match::WithoutQuantifier {
             item: MatchItem::MatchAnyCharacter,
@@ -366,7 +389,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             eager,
             lower,
             upper,
-            RelativeOpcode::Consume(c)
+            vec![RelativeOpcode::Consume(c)]
         )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
@@ -379,7 +402,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             lazy,
             lower,
             upper,
-            RelativeOpcode::Consume(c)
+            vec![RelativeOpcode::Consume(c)]
         )),
         Match::WithoutQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
