@@ -680,6 +680,15 @@ mod tests {
                     Char('z'),
                 )]),
             ),
+            (
+                "^[abc0-9]",
+                CharacterGroup::Items(vec![
+                    CharacterGroupItem::Char(Char('a')),
+                    CharacterGroupItem::Char(Char('b')),
+                    CharacterGroupItem::Char(Char('c')),
+                    CharacterGroupItem::CharacterRange(Char('0'), Char('9')),
+                ]),
+            ),
         ];
 
         for (test_id, (input, output)) in input_output.into_iter().enumerate() {
