@@ -207,177 +207,169 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
     };
 
     match m {
-        // match zero or one
-        Match::WithQuantifier {
-            item: MatchItem::MatchAnyCharacter,
-            quantifier: Quantifier::Eager(QuantifierType::ZeroOrOne),
-        } => todo!(),
-        Match::WithQuantifier {
-            item: MatchItem::MatchAnyCharacter,
-            quantifier: Quantifier::Lazy(QuantifierType::ZeroOrOne),
-        } => todo!(),
-
-        Match::WithQuantifier {
-            item: MatchItem::MatchCharacter(MatchCharacter(Char(_))),
-            quantifier: Quantifier::Eager(QuantifierType::ZeroOrOne),
-        } => todo!(),
-        Match::WithQuantifier {
-            item: MatchItem::MatchCharacter(MatchCharacter(Char(_))),
-            quantifier: Quantifier::Lazy(QuantifierType::ZeroOrOne),
-        } => todo!(),
-
-        // match zero or more
-        Match::WithQuantifier {
-            item: MatchItem::MatchAnyCharacter,
-            quantifier: Quantifier::Eager(QuantifierType::ZeroOrMore),
-        } => Ok(generate_range_quantifier_block!(
-            eager,
-            0,
-            vec![RelativeOpcode::Any]
-        )),
-        Match::WithQuantifier {
-            item: MatchItem::MatchAnyCharacter,
-            quantifier: Quantifier::Lazy(QuantifierType::ZeroOrMore),
-        } => Ok(generate_range_quantifier_block!(
-            lazy,
-            0,
-            vec![RelativeOpcode::Any]
-        )),
-
-        Match::WithQuantifier {
-            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
-            quantifier: Quantifier::Eager(QuantifierType::ZeroOrMore),
-        } => Ok(generate_range_quantifier_block!(
-            eager,
-            0,
-            vec![RelativeOpcode::Consume(c)]
-        )),
-        Match::WithQuantifier {
-            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
-            quantifier: Quantifier::Lazy(QuantifierType::ZeroOrMore),
-        } => Ok(generate_range_quantifier_block!(
-            lazy,
-            0,
-            vec![RelativeOpcode::Consume(c)]
-        )),
-
-        // match one or more
-        Match::WithQuantifier {
-            item: MatchItem::MatchAnyCharacter,
-            quantifier: Quantifier::Eager(QuantifierType::OneOrMore),
-        } => Ok(generate_range_quantifier_block!(
-            eager,
-            1,
-            vec![RelativeOpcode::Any]
-        )),
-        Match::WithQuantifier {
-            item: MatchItem::MatchAnyCharacter,
-            quantifier: Quantifier::Lazy(QuantifierType::OneOrMore),
-        } => Ok(generate_range_quantifier_block!(
-            lazy,
-            1,
-            vec![RelativeOpcode::Any]
-        )),
-        Match::WithQuantifier {
-            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
-            quantifier: Quantifier::Eager(QuantifierType::OneOrMore),
-        } => Ok(generate_range_quantifier_block!(
-            eager,
-            1,
-            vec![RelativeOpcode::Consume(c)]
-        )),
-        Match::WithQuantifier {
-            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
-            quantifier: Quantifier::Lazy(QuantifierType::OneOrMore),
-        } => Ok(generate_range_quantifier_block!(
-            lazy,
-            1,
-            vec![RelativeOpcode::Consume(c)]
-        )),
-
-        // match exact
-        Match::WithQuantifier {
-            item: MatchItem::MatchAnyCharacter,
-            quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(cnt))),
-        } => Ok(vec![RelativeOpcode::Any; cnt as usize]),
-        Match::WithQuantifier {
-            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
-            quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(cnt))),
-        } => Ok(vec![RelativeOpcode::Consume(c); cnt as usize]),
-        Match::WithQuantifier {
-            item: MatchItem::MatchAnyCharacter,
-            quantifier: Quantifier::Lazy(QuantifierType::MatchExactRange(Integer(cnt))),
-        } => Ok(vec![RelativeOpcode::Any; cnt as usize]),
-        Match::WithQuantifier {
-            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
-            quantifier: Quantifier::Lazy(QuantifierType::MatchExactRange(Integer(cnt))),
-        } => Ok(vec![RelativeOpcode::Consume(c); cnt as usize]),
-
-        // match at least
-        Match::WithQuantifier {
-            item: MatchItem::MatchAnyCharacter,
-            quantifier: Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(cnt))),
-        } => Ok(generate_range_quantifier_block!(
-            eager,
-            cnt,
-            vec![RelativeOpcode::Any]
-        )),
-        Match::WithQuantifier {
-            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
-            quantifier: Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(cnt))),
-        } => Ok(generate_range_quantifier_block!(
-            eager,
-            cnt,
-            vec![RelativeOpcode::Consume(c)]
-        )),
-        Match::WithQuantifier {
-            item: MatchItem::MatchAnyCharacter,
-            quantifier: Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(cnt))),
-        } => Ok(generate_range_quantifier_block!(
-            lazy,
-            cnt,
-            vec![RelativeOpcode::Any]
-        )),
-        Match::WithQuantifier {
-            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
-            quantifier: Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(cnt))),
-        } => Ok(generate_range_quantifier_block!(
-            lazy,
-            cnt,
-            vec![RelativeOpcode::Consume(c)]
-        )),
-
-        // match between range
-        Match::WithQuantifier {
-            item: MatchItem::MatchAnyCharacter,
-            quantifier:
-                Quantifier::Eager(QuantifierType::MatchBetweenRange {
-                    lower_bound: Integer(lower),
-                    upper_bound: Integer(upper),
-                }),
-        } => Ok(generate_range_quantifier_block!(
-            eager,
-            lower,
-            upper,
-            vec![RelativeOpcode::Any]
-        )),
-        Match::WithQuantifier {
-            item: MatchItem::MatchAnyCharacter,
-            quantifier:
-                Quantifier::Lazy(QuantifierType::MatchBetweenRange {
-                    lower_bound: Integer(lower),
-                    upper_bound: Integer(upper),
-                }),
-        } => Ok(generate_range_quantifier_block!(
-            lazy,
-            lower,
-            upper,
-            vec![RelativeOpcode::Any]
-        )),
+        // Any character matchers
         Match::WithoutQuantifier {
             item: MatchItem::MatchAnyCharacter,
         } => Ok(vec![RelativeOpcode::Any]),
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Eager(QuantifierType::ZeroOrOne),
+        } => todo!(),
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Lazy(QuantifierType::ZeroOrOne),
+        } => todo!(),
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Eager(QuantifierType::ZeroOrMore),
+        } => Ok(generate_range_quantifier_block!(
+            eager,
+            0,
+            vec![RelativeOpcode::Any]
+        )),
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Lazy(QuantifierType::ZeroOrMore),
+        } => Ok(generate_range_quantifier_block!(
+            lazy,
+            0,
+            vec![RelativeOpcode::Any]
+        )),
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Eager(QuantifierType::OneOrMore),
+        } => Ok(generate_range_quantifier_block!(
+            eager,
+            1,
+            vec![RelativeOpcode::Any]
+        )),
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Lazy(QuantifierType::OneOrMore),
+        } => Ok(generate_range_quantifier_block!(
+            lazy,
+            1,
+            vec![RelativeOpcode::Any]
+        )),
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(cnt))),
+        } => Ok(vec![RelativeOpcode::Any; cnt as usize]),
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Lazy(QuantifierType::MatchExactRange(Integer(cnt))),
+        } => Ok(vec![RelativeOpcode::Any; cnt as usize]),
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(cnt))),
+        } => Ok(generate_range_quantifier_block!(
+            eager,
+            cnt,
+            vec![RelativeOpcode::Any]
+        )),
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier: Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(cnt))),
+        } => Ok(generate_range_quantifier_block!(
+            lazy,
+            cnt,
+            vec![RelativeOpcode::Any]
+        )),
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier:
+                Quantifier::Eager(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(lower),
+                    upper_bound: Integer(upper),
+                }),
+        } => Ok(generate_range_quantifier_block!(
+            eager,
+            lower,
+            upper,
+            vec![RelativeOpcode::Any]
+        )),
+        Match::WithQuantifier {
+            item: MatchItem::MatchAnyCharacter,
+            quantifier:
+                Quantifier::Lazy(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(lower),
+                    upper_bound: Integer(upper),
+                }),
+        } => Ok(generate_range_quantifier_block!(
+            lazy,
+            lower,
+            upper,
+            vec![RelativeOpcode::Any]
+        )),
 
+        // Character matchers
+        Match::WithoutQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+        } => Ok(vec![RelativeOpcode::Consume(c)]),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(_))),
+            quantifier: Quantifier::Eager(QuantifierType::ZeroOrOne),
+        } => todo!(),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(_))),
+            quantifier: Quantifier::Lazy(QuantifierType::ZeroOrOne),
+        } => todo!(),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier: Quantifier::Eager(QuantifierType::ZeroOrMore),
+        } => Ok(generate_range_quantifier_block!(
+            eager,
+            0,
+            vec![RelativeOpcode::Consume(c)]
+        )),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier: Quantifier::Lazy(QuantifierType::ZeroOrMore),
+        } => Ok(generate_range_quantifier_block!(
+            lazy,
+            0,
+            vec![RelativeOpcode::Consume(c)]
+        )),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier: Quantifier::Eager(QuantifierType::OneOrMore),
+        } => Ok(generate_range_quantifier_block!(
+            eager,
+            1,
+            vec![RelativeOpcode::Consume(c)]
+        )),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier: Quantifier::Lazy(QuantifierType::OneOrMore),
+        } => Ok(generate_range_quantifier_block!(
+            lazy,
+            1,
+            vec![RelativeOpcode::Consume(c)]
+        )),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(cnt))),
+        } => Ok(vec![RelativeOpcode::Consume(c); cnt as usize]),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier: Quantifier::Lazy(QuantifierType::MatchExactRange(Integer(cnt))),
+        } => Ok(vec![RelativeOpcode::Consume(c); cnt as usize]),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier: Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(cnt))),
+        } => Ok(generate_range_quantifier_block!(
+            eager,
+            cnt,
+            vec![RelativeOpcode::Consume(c)]
+        )),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
+            quantifier: Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(cnt))),
+        } => Ok(generate_range_quantifier_block!(
+            lazy,
+            cnt,
+            vec![RelativeOpcode::Consume(c)]
+        )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
             quantifier:
@@ -404,10 +396,8 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             upper,
             vec![RelativeOpcode::Consume(c)]
         )),
-        Match::WithoutQuantifier {
-            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
-        } => Ok(vec![RelativeOpcode::Consume(c)]),
 
+        // Character classes
         Match::WithQuantifier {
             item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(_)),
             quantifier: _,
@@ -416,6 +406,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(cc)),
         } => character_class(cc),
 
+        // Character groups
         Match::WithQuantifier {
             item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(_)),
             quantifier: _,
@@ -424,7 +415,7 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(cg)),
         } => character_group(cg),
 
-        // unicode categories
+        // Unicode categories
         Match::WithQuantifier {
             item:
                 MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClassFromUnicodeCategory(
