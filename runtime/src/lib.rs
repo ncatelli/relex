@@ -1023,6 +1023,32 @@ mod tests {
     }
 
     #[test]
+    fn should_evaluate_lazy_match_zero_or_one_expression() {
+        let tests = vec![
+            (None, "aab"),
+            (Some(vec![SaveGroupSlot::complete(0, 0, 3)]), "aaab"),
+            (Some(vec![SaveGroupSlot::complete(0, 0, 4)]), "aaaab"),
+        ];
+
+        // `^aa(a?)?`
+        let prog = Instructions::default().with_opcodes(vec![
+            Opcode::StartSave(InstStartSave::new(0)),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(4))),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::EndSave(InstEndSave::new(0)),
+            Opcode::Match,
+        ]);
+
+        for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
+            let res = run::<1>(&prog, input);
+            assert_eq!((case_id, expected_res), (case_id, res));
+        }
+    }
+
+    #[test]
     fn should_evaluate_eager_match_exact_quantifier_expression() {
         let tests = vec![
             (vec![SaveGroupSlot::complete(0, 0, 2)], "aab"),
