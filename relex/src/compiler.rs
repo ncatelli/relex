@@ -165,37 +165,32 @@ macro_rules! generate_range_quantifier_block {
     };
 
     (eager, $min:expr, $max:expr, $consumer:expr) => {
-        (0..($max - $min))
-            .flat_map(|_| {
-                $consumer.clone().into_iter().chain(
-                    vec![RelativeOpcode::Split(1, ($consumer.len() as isize) + 1)].into_iter(),
-                )
-            })
-            .chain(
-                $consumer
-                    .clone()
+        $consumer
+            .clone()
+            .into_iter()
+            .cycle()
+            .take($consumer.len() * $min as usize)
+            .into_iter()
+            .chain((0..($max - $min)).flat_map(|_| {
+                vec![RelativeOpcode::Split(1, ($consumer.len() as isize) + 1)]
                     .into_iter()
-                    .cycle()
-                    .take($consumer.len() * $min as usize)
-                    .into_iter(),
-            )
+                    .chain($consumer.clone().into_iter())
+            }))
             .collect()
     };
 
     (lazy, $min:expr, $max:expr, $consumer:expr) => {
-        (0..($max - $min))
-            .flat_map(|_| {
-                $consumer.clone().into_iter().chain(
-                    vec![RelativeOpcode::Split(($consumer.len() as isize) + 1, 1)].into_iter(),
-                )
-            })
-            .chain(
-                $consumer
-                    .clone()
+        $consumer
+            .clone()
+            .into_iter()
+            .cycle()
+            .take($consumer.len() * $min as usize)
+            .into_iter()
+            .chain((0..($max - $min)).flat_map(|_| {
+                vec![RelativeOpcode::Split(($consumer.len() as isize) + 1, 1)]
                     .into_iter()
-                    .cycle()
-                    .take($consumer.len() * $min as usize),
-            )
+                    .chain($consumer.clone().into_iter())
+            }))
             .collect()
     };
 }
@@ -214,7 +209,12 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
             quantifier: Quantifier::Eager(QuantifierType::ZeroOrOne),
-        } => todo!(),
+        } => Ok(generate_range_quantifier_block!(
+            eager,
+            0,
+            1,
+            vec![RelativeOpcode::Any]
+        )),
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
             quantifier: Quantifier::Lazy(QuantifierType::ZeroOrOne),
@@ -307,9 +307,14 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
         } => Ok(vec![RelativeOpcode::Consume(c)]),
         Match::WithQuantifier {
-            item: MatchItem::MatchCharacter(MatchCharacter(Char(_))),
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
             quantifier: Quantifier::Eager(QuantifierType::ZeroOrOne),
-        } => todo!(),
+        } => Ok(generate_range_quantifier_block!(
+            eager,
+            0,
+            1,
+            vec![RelativeOpcode::Consume(c)]
+        )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(_))),
             quantifier: Quantifier::Lazy(QuantifierType::ZeroOrOne),
@@ -604,12 +609,10 @@ fn alternations_for_supplied_relative_opcodes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ast::*;
 
     #[test]
     fn should_compile_unanchored_character_match() {
-        use ast::*;
-        use relex_runtime::*;
-
         // approximate to `ab`
         let regex_ast = Regex::Unanchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Match(Match::WithoutQuantifier {
@@ -635,9 +638,6 @@ mod tests {
 
     #[test]
     fn should_compile_anchored_character_match() {
-        use ast::*;
-        use relex_runtime::*;
-
         // approximate to `^ab`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Match(Match::WithoutQuantifier {
@@ -660,9 +660,6 @@ mod tests {
 
     #[test]
     fn should_compile_alternation() {
-        use ast::*;
-        use relex_runtime::*;
-
         // approximate to `^a|b`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![
             SubExpression(vec![SubExpressionItem::Match(Match::WithoutQuantifier {
@@ -687,9 +684,6 @@ mod tests {
 
     #[test]
     fn should_compile_any_character_match() {
-        use ast::*;
-        use relex_runtime::*;
-
         // approximate to `.`
         let regex_ast = Regex::Unanchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Match(Match::WithoutQuantifier {
@@ -711,9 +705,6 @@ mod tests {
 
     #[test]
     fn should_compile_zero_or_more_quantified_item() {
-        use ast::*;
-        use relex_runtime::*;
-
         // approximate to `^.*`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Match(Match::WithQuantifier {
@@ -753,9 +744,6 @@ mod tests {
 
     #[test]
     fn should_compile_one_or_more_quantified_item() {
-        use ast::*;
-        use relex_runtime::*;
-
         // approximate to `^.+`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Match(Match::WithQuantifier {
@@ -796,10 +784,44 @@ mod tests {
     }
 
     #[test]
-    fn should_compile_exact_match_quantified_item() {
-        use ast::*;
-        use relex_runtime::*;
+    fn should_compile_match_zero_or_one_item() {
+        // approximate to `^.?`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithQuantifier {
+                item: MatchItem::MatchAnyCharacter,
+                quantifier: Quantifier::Eager(QuantifierType::ZeroOrOne),
+            }),
+        ])]));
 
+        assert_eq!(
+            Ok(Instructions::default().with_opcodes(vec![
+                Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(2))),
+                Opcode::Any,
+                Opcode::Match,
+            ])),
+            compile(regex_ast)
+        );
+
+        // approximate to `^a?`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Match(Match::WithQuantifier {
+                item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                quantifier: Quantifier::Eager(QuantifierType::ZeroOrOne),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::default().with_opcodes(vec![
+                Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(2))),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Match
+            ])),
+            compile(regex_ast)
+        );
+    }
+
+    #[test]
+    fn should_compile_exact_match_quantified_item() {
         // approximate to `^.{2}`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Match(Match::WithQuantifier {
@@ -834,9 +856,6 @@ mod tests {
 
     #[test]
     fn should_compile_match_at_least_quantified_item() {
-        use ast::*;
-        use relex_runtime::*;
-
         // approximate to `^.{2,}`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Match(Match::WithQuantifier {
@@ -880,9 +899,6 @@ mod tests {
 
     #[test]
     fn should_compile_match_between_quantified_item() {
-        use ast::*;
-        use relex_runtime::*;
-
         // approximate to `^.{2,4}`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Match(Match::WithQuantifier {
@@ -897,10 +913,10 @@ mod tests {
         assert_eq!(
             Ok(Instructions::default().with_opcodes(vec![
                 Opcode::Any,
-                Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(3))),
                 Opcode::Any,
-                Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(5))),
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(4))),
                 Opcode::Any,
+                Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(6))),
                 Opcode::Any,
                 Opcode::Match
             ])),
@@ -921,10 +937,10 @@ mod tests {
         assert_eq!(
             Ok(Instructions::default().with_opcodes(vec![
                 Opcode::Consume(InstConsume::new('a')),
-                Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(3))),
                 Opcode::Consume(InstConsume::new('a')),
-                Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(5))),
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(4))),
                 Opcode::Consume(InstConsume::new('a')),
+                Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(6))),
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Match
             ])),
@@ -934,9 +950,6 @@ mod tests {
 
     #[test]
     fn should_compile_character_classes() {
-        use ast::*;
-        use relex_runtime::*;
-
         // approximate to `^\w`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Match(Match::WithoutQuantifier {
@@ -982,9 +995,6 @@ mod tests {
 
     #[test]
     fn should_compile_single_character_character_group() {
-        use ast::*;
-        use relex_runtime::*;
-
         // approximate to `^[a]`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Match(Match::WithoutQuantifier {
@@ -1009,9 +1019,6 @@ mod tests {
 
     #[test]
     fn should_compile_compound_character_group() {
-        use ast::*;
-        use relex_runtime::*;
-
         // approximate to `^[az]`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Match(Match::WithoutQuantifier {
@@ -1043,9 +1050,6 @@ mod tests {
 
     #[test]
     fn should_compile_character_group_range() {
-        use ast::*;
-        use relex_runtime::*;
-
         // approximate to `^[0-9]`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Match(Match::WithoutQuantifier {
