@@ -218,7 +218,12 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
             quantifier: Quantifier::Lazy(QuantifierType::ZeroOrOne),
-        } => todo!(),
+        } => Ok(generate_range_quantifier_block!(
+            lazy,
+            0,
+            1,
+            vec![RelativeOpcode::Any]
+        )),
         Match::WithQuantifier {
             item: MatchItem::MatchAnyCharacter,
             quantifier: Quantifier::Eager(QuantifierType::ZeroOrMore),
@@ -316,9 +321,14 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             vec![RelativeOpcode::Consume(c)]
         )),
         Match::WithQuantifier {
-            item: MatchItem::MatchCharacter(MatchCharacter(Char(_))),
+            item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
             quantifier: Quantifier::Lazy(QuantifierType::ZeroOrOne),
-        } => todo!(),
+        } => Ok(generate_range_quantifier_block!(
+            lazy,
+            0,
+            1,
+            vec![RelativeOpcode::Consume(c)]
+        )),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacter(MatchCharacter(Char(c))),
             quantifier: Quantifier::Eager(QuantifierType::ZeroOrMore),
