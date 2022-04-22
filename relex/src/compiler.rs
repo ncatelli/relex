@@ -1078,11 +1078,30 @@ mod tests {
                     Opcode::Match,
                 ],
             ),
+            // approximate to `^\d??`
+            (
+                Quantifier::Lazy(QuantifierType::ZeroOrOne),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(1))),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Match,
+                ],
+            ),
             // approximate to `^\d*`
             (
                 Quantifier::Eager(QuantifierType::ZeroOrMore),
                 vec![
                     Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(3))),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^\d*?`
+            (
+                Quantifier::Lazy(QuantifierType::ZeroOrMore),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                     Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
                     Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
                     Opcode::Match,
@@ -1094,6 +1113,17 @@ mod tests {
                 vec![
                     Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
                     Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(4))),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(1))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^\d+?`
+            (
+                Quantifier::Lazy(QuantifierType::OneOrMore),
+                vec![
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(2))),
                     Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
                     Opcode::Jmp(InstJmp::new(InstIndex::from(1))),
                     Opcode::Match,
