@@ -928,6 +928,92 @@ mod tests {
     }
 
     #[test]
+    fn should_evaluate_eager_character_class_zero_or_one_expression() {
+        let tests = vec![
+            (None, "aab"),
+            (Some(vec![SaveGroupSlot::complete(0, 0, 1)]), "1ab"),
+            (Some(vec![SaveGroupSlot::complete(0, 0, 2)]), "123"),
+        ];
+
+        // `^\d\d?` | `^[0-9][0-9]?`
+        let prog = Instructions::default()
+            .with_sets(vec![CharacterSet::inclusive(CharacterAlphabet::Range(
+                '0'..='9',
+            ))])
+            .with_opcodes(vec![
+                Opcode::StartSave(InstStartSave::new(0)),
+                Opcode::ConsumeSet(InstConsumeSet::new(0)),
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(4))),
+                Opcode::ConsumeSet(InstConsumeSet::new(0)),
+                Opcode::EndSave(InstEndSave::new(0)),
+                Opcode::Match,
+            ]);
+
+        for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
+            let res = run::<1>(&prog, input);
+            assert_eq!((case_id, expected_res), (case_id, res));
+        }
+    }
+
+    #[test]
+    fn should_evaluate_eager_character_class_zero_or_more_expression() {
+        let tests = vec![
+            (None, "aab"),
+            (Some(vec![SaveGroupSlot::complete(0, 0, 1)]), "1ab"),
+            (Some(vec![SaveGroupSlot::complete(0, 0, 3)]), "123"),
+        ];
+
+        // `^\d\d*` | `^[0-9][0-9]*`
+        let prog = Instructions::default()
+            .with_sets(vec![CharacterSet::inclusive(CharacterAlphabet::Range(
+                '0'..='9',
+            ))])
+            .with_opcodes(vec![
+                Opcode::StartSave(InstStartSave::new(0)),
+                Opcode::ConsumeSet(InstConsumeSet::new(0)),
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(5))),
+                Opcode::ConsumeSet(InstConsumeSet::new(0)),
+                Opcode::Jmp(InstJmp::new(InstIndex::from(2))),
+                Opcode::EndSave(InstEndSave::new(0)),
+                Opcode::Match,
+            ]);
+
+        for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
+            let res = run::<1>(&prog, input);
+            assert_eq!((case_id, expected_res), (case_id, res));
+        }
+    }
+
+    #[test]
+    fn should_evaluate_eager_character_class_one_or_more_expression() {
+        let tests = vec![
+            (None, "aab"),
+            (Some(vec![SaveGroupSlot::complete(0, 0, 1)]), "1ab"),
+            (Some(vec![SaveGroupSlot::complete(0, 0, 3)]), "123"),
+        ];
+
+        // `^\d+` | `^[0-9]+`
+        let prog = Instructions::default()
+            .with_sets(vec![CharacterSet::inclusive(CharacterAlphabet::Range(
+                '0'..='9',
+            ))])
+            .with_opcodes(vec![
+                Opcode::StartSave(InstStartSave::new(0)),
+                Opcode::ConsumeSet(InstConsumeSet::new(0)),
+                Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(5))),
+                Opcode::ConsumeSet(InstConsumeSet::new(0)),
+                Opcode::Jmp(InstJmp::new(InstIndex::from(2))),
+                Opcode::EndSave(InstEndSave::new(0)),
+                Opcode::Match,
+            ]);
+
+        for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
+            let res = run::<1>(&prog, input);
+            assert_eq!((case_id, expected_res), (case_id, res));
+        }
+    }
+
+    #[test]
     fn should_evaluate_consecutive_diverging_match_expression() {
         let progs = vec![
             (
