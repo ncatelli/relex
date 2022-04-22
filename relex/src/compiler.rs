@@ -1067,6 +1067,68 @@ mod tests {
     }
 
     #[test]
+    fn should_compile_character_classes_with_quantifiers() {
+        let quantifier_and_expected_opcodes = vec![
+            // approximate to `^\d?`
+            (
+                Quantifier::Eager(QuantifierType::ZeroOrOne),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(2))),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^\d*`
+            (
+                Quantifier::Eager(QuantifierType::ZeroOrMore),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(3))),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^\d+`
+            (
+                Quantifier::Eager(QuantifierType::OneOrMore),
+                vec![
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(4))),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(1))),
+                    Opcode::Match,
+                ],
+            ),
+        ];
+
+        for (id, (quantifier, expected_opcodes)) in
+            quantifier_and_expected_opcodes.into_iter().enumerate()
+        {
+            let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+                SubExpressionItem::Match(Match::WithQuantifier {
+                    item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(
+                        CharacterClass::AnyDecimalDigit,
+                    )),
+                    quantifier,
+                }),
+            ])]));
+
+            let res = compile(regex_ast);
+            assert_eq!(
+                (
+                    id,
+                    Ok(Instructions::default()
+                        .with_sets(vec![CharacterSet::inclusive(CharacterAlphabet::Range(
+                            '0'..='9'
+                        ))])
+                        .with_opcodes(expected_opcodes))
+                ),
+                (id, res)
+            );
+        }
+    }
+
+    #[test]
     fn should_compile_single_character_character_group() {
         // approximate to `^[a]`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
