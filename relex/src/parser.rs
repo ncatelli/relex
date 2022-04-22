@@ -659,6 +659,87 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_character_class_items() {
+        use ast::*;
+        let input_output = vec![
+            (
+                "^\\w",
+                Match::WithoutQuantifier {
+                    item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(
+                        CharacterClass::AnyWord,
+                    )),
+                },
+            ),
+            (
+                "^\\w?",
+                Match::WithQuantifier {
+                    item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(
+                        CharacterClass::AnyWord,
+                    )),
+                    quantifier: Quantifier::Eager(QuantifierType::ZeroOrOne),
+                },
+            ),
+            (
+                "^\\w*",
+                Match::WithQuantifier {
+                    item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(
+                        CharacterClass::AnyWord,
+                    )),
+                    quantifier: Quantifier::Eager(QuantifierType::ZeroOrMore),
+                },
+            ),
+            (
+                "^\\w+",
+                Match::WithQuantifier {
+                    item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(
+                        CharacterClass::AnyWord,
+                    )),
+                    quantifier: Quantifier::Eager(QuantifierType::OneOrMore),
+                },
+            ),
+            (
+                "^\\W",
+                Match::WithoutQuantifier {
+                    item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(
+                        CharacterClass::AnyWordInverted,
+                    )),
+                },
+            ),
+            (
+                "^\\d",
+                Match::WithoutQuantifier {
+                    item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(
+                        CharacterClass::AnyDecimalDigit,
+                    )),
+                },
+            ),
+            (
+                "^\\D",
+                Match::WithoutQuantifier {
+                    item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(
+                        CharacterClass::AnyDecimalDigitInverted,
+                    )),
+                },
+            ),
+        ];
+
+        for (test_id, (input, class)) in input_output.into_iter().enumerate() {
+            let input = input.chars().enumerate().collect::<Vec<(usize, char)>>();
+
+            let res = parse(&input);
+            assert_eq!(
+                (
+                    test_id,
+                    Ok(Regex::StartOfStringAnchored(Expression(vec![
+                        SubExpression(vec![SubExpressionItem::Match(class)])
+                    ])))
+                ),
+                (test_id, res)
+            )
+        }
+    }
+
+    #[test]
     fn should_parse_character_group_items() {
         use ast::*;
         let input_output = vec![
