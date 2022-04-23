@@ -222,25 +222,30 @@ impl AsRef<[Instruction]> for Instructions {
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InstIndex(usize);
+pub struct InstIndex(u32);
 
 impl InstIndex {
     #[inline]
-    fn as_usize(self) -> usize {
+    fn as_u32(self) -> u32 {
         self.0
+    }
+
+    #[inline]
+    fn as_usize(self) -> usize {
+        self.0 as usize
     }
 }
 
-impl From<usize> for InstIndex {
-    fn from(ptr: usize) -> Self {
+impl From<u32> for InstIndex {
+    fn from(ptr: u32) -> Self {
         Self(ptr)
     }
 }
 
-impl std::ops::Add<usize> for InstIndex {
+impl std::ops::Add<u32> for InstIndex {
     type Output = Self;
 
-    fn add(self, rhs: usize) -> Self::Output {
+    fn add(self, rhs: u32) -> Self::Output {
         let new_ptr = self.0 + rhs;
 
         InstIndex::from(new_ptr)
@@ -521,8 +526,8 @@ impl Display for InstSplit {
         write!(
             f,
             "Split: ({:04}), ({:04})",
-            self.x_branch.as_usize(),
-            self.y_branch.as_usize()
+            self.x_branch.as_u32(),
+            self.y_branch.as_u32()
         )
     }
 }
@@ -540,7 +545,7 @@ impl InstJmp {
 
 impl Display for InstJmp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "JumpAbs: ({:04})", self.next.as_usize())
+        write!(f, "JumpAbs: ({:04})", self.next.as_u32())
     }
 }
 
@@ -1212,7 +1217,7 @@ mod tests {
     fn should_retain_a_fixed_opcode_size() {
         use core::mem::size_of;
 
-        assert_eq!(24, size_of::<Opcode>())
+        assert_eq!(16, size_of::<Opcode>())
     }
 
     #[test]

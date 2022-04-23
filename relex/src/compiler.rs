@@ -13,22 +13,22 @@ enum RelativeOpcode {
     Any,
     Consume(char),
     ConsumeSet(CharacterSet),
-    Split(isize, isize),
-    Jmp(isize),
+    Split(i32, i32),
+    Jmp(i32),
     StartSave(usize),
     EndSave(usize),
     Match,
 }
 
 impl RelativeOpcode {
-    fn into_opcode_with_index(self, sets: &mut Vec<CharacterSet>, idx: usize) -> Option<Opcode> {
+    fn into_opcode_with_index(self, sets: &mut Vec<CharacterSet>, idx: u32) -> Option<Opcode> {
         match self {
             RelativeOpcode::Any => Some(Opcode::Any),
             RelativeOpcode::Consume(c) => Some(Opcode::Consume(InstConsume::new(c))),
             RelativeOpcode::Split(rel_x, rel_y) => {
-                let signed_idx = idx as isize;
-                let x: usize = (signed_idx + rel_x).try_into().ok()?;
-                let y: usize = (signed_idx + rel_y).try_into().ok()?;
+                let signed_idx = idx as i32;
+                let x: u32 = (signed_idx + rel_x).try_into().ok()?;
+                let y: u32 = (signed_idx + rel_y).try_into().ok()?;
 
                 Some(Opcode::Split(InstSplit::new(
                     InstIndex::from(x),
@@ -36,8 +36,8 @@ impl RelativeOpcode {
                 )))
             }
             RelativeOpcode::Jmp(rel_jmp_to) => {
-                let signed_idx = idx as isize;
-                let jmp_to: usize = (signed_idx + rel_jmp_to).try_into().ok()?;
+                let signed_idx = idx as i32;
+                let jmp_to: u32 = (signed_idx + rel_jmp_to).try_into().ok()?;
 
                 Some(Opcode::Jmp(InstJmp::new(InstIndex::from(jmp_to))))
             }
@@ -60,7 +60,7 @@ impl RelativeOpcode {
         }
     }
 
-    fn into_opcode_with_index_unchecked(self, sets: &mut Vec<CharacterSet>, idx: usize) -> Opcode {
+    fn into_opcode_with_index_unchecked(self, sets: &mut Vec<CharacterSet>, idx: u32) -> Opcode {
         self.into_opcode_with_index(sets, idx).unwrap()
     }
 }
@@ -92,15 +92,17 @@ pub fn compile(regex_ast: ast::Regex) -> Result<Instructions, String> {
 
     relative_ops
         .map(|rel_ops| {
-            let (sets, absolute_insts) = rel_ops.into_iter().enumerate().fold(
-                (vec![], vec![]),
-                |(mut sets, mut insts), (idx, opcode)| {
+            let (sets, absolute_insts) = rel_ops
+                .into_iter()
+                .enumerate()
+                // truncate idx to a u32
+                .map(|(idx, sets)| (idx as u32, sets))
+                .fold((vec![], vec![]), |(mut sets, mut insts), (idx, opcode)| {
                     let absolute_opcode = opcode.into_opcode_with_index_unchecked(&mut sets, idx);
                     insts.push(absolute_opcode);
 
                     (sets, insts)
-                },
-            );
+                });
 
             (sets, absolute_insts)
         })
@@ -142,10 +144,10 @@ macro_rules! generate_range_quantifier_block {
             .take($consumer.len() * $min as usize)
             .into_iter()
             // jump past end of expression
-            .chain(vec![RelativeOpcode::Split(1, (($consumer.len() + 2) as isize))].into_iter())
+            .chain(vec![RelativeOpcode::Split(1, (($consumer.len() + 2) as i32))].into_iter())
             .chain($consumer.clone().into_iter())
             // return to split
-            .chain(vec![RelativeOpcode::Jmp(-($consumer.len() as isize) - 1)].into_iter())
+            .chain(vec![RelativeOpcode::Jmp(-($consumer.len() as i32) - 1)].into_iter())
             .collect()
     };
 
@@ -157,10 +159,10 @@ macro_rules! generate_range_quantifier_block {
             .take($consumer.len() * $min as usize)
             .into_iter()
             // jump past end of expression
-            .chain(vec![RelativeOpcode::Split((($consumer.len() + 2) as isize), 1)].into_iter())
+            .chain(vec![RelativeOpcode::Split((($consumer.len() + 2) as i32), 1)].into_iter())
             .chain($consumer.clone().into_iter())
             // return to split
-            .chain(vec![RelativeOpcode::Jmp(-($consumer.len() as isize) - 1)].into_iter())
+            .chain(vec![RelativeOpcode::Jmp(-($consumer.len() as i32) - 1)].into_iter())
             .collect()
     };
 
@@ -172,7 +174,7 @@ macro_rules! generate_range_quantifier_block {
             .take($consumer.len() * $min as usize)
             .into_iter()
             .chain((0..($max - $min)).flat_map(|_| {
-                vec![RelativeOpcode::Split(1, ($consumer.len() as isize) + 1)]
+                vec![RelativeOpcode::Split(1, ($consumer.len() as i32) + 1)]
                     .into_iter()
                     .chain($consumer.clone().into_iter())
             }))
@@ -187,7 +189,7 @@ macro_rules! generate_range_quantifier_block {
             .take($consumer.len() * $min as usize)
             .into_iter()
             .chain((0..($max - $min)).flat_map(|_| {
-                vec![RelativeOpcode::Split(($consumer.len() as isize) + 1, 1)]
+                vec![RelativeOpcode::Split(($consumer.len() as i32) + 1, 1)]
                     .into_iter()
                     .chain($consumer.clone().into_iter())
             }))
@@ -729,10 +731,10 @@ fn alternations_for_supplied_relative_opcodes(
         .into_iter()
         .zip(start_end_offsets_by_subexpr.into_iter())
         .enumerate()
-        .map(|(idx, (opcodes, start_end_offsets))| {
-            let optional_next_offsets = ((idx + 1) != subexpr_cnt)
-                .then(|| start_end_offsets)
-                .map(|(start, end)| (start as isize, end as isize));
+        .map(|(idx, (opcodes, (start, end)))| (idx as u32, opcodes, (start as i32, end as i32)))
+        .map(|(idx, opcodes, start_end_offsets)| {
+            let optional_next_offsets =
+                ((idx + 1) != subexpr_cnt as u32).then(|| start_end_offsets);
             (optional_next_offsets, opcodes)
         })
         .flat_map(|(start_of_next, ops)| match start_of_next {
