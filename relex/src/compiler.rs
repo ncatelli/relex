@@ -446,15 +446,19 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
         Match::WithQuantifier {
             item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(cc)),
             quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(cnt))),
-        } => {
-            character_class(cc).map(|rel_ops| generate_range_quantifier_block!(eager, cnt, rel_ops))
-        }
+        } => character_class(cc).map(|rel_ops| {
+            let multiple_of_len = rel_ops.len() * (cnt as usize);
+
+            rel_ops.into_iter().cycle().take(multiple_of_len).collect()
+        }),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(cc)),
             quantifier: Quantifier::Lazy(QuantifierType::MatchExactRange(Integer(cnt))),
-        } => {
-            character_class(cc).map(|rel_ops| generate_range_quantifier_block!(lazy, cnt, rel_ops))
-        }
+        } => character_class(cc).map(|rel_ops| {
+            let multiple_of_len = rel_ops.len() * (cnt as usize);
+
+            rel_ops.into_iter().cycle().take(multiple_of_len).collect()
+        }),
         Match::WithQuantifier {
             item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterClass(cc)),
             quantifier: Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(lower))),
@@ -485,13 +489,80 @@ fn match_item(m: ast::Match) -> Result<RelativeOpcodes, String> {
             .map(|rel_ops| generate_range_quantifier_block!(lazy, lower, upper, rel_ops)),
 
         // Character groups
-        Match::WithQuantifier {
-            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(_)),
-            quantifier: _,
-        } => todo!(),
         Match::WithoutQuantifier {
             item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(cg)),
         } => character_group(cg),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(cg)),
+            quantifier: Quantifier::Eager(QuantifierType::ZeroOrOne),
+        } => character_group(cg)
+            .map(|rel_ops| generate_range_quantifier_block!(eager, 0, 1, rel_ops)),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(cg)),
+            quantifier: Quantifier::Lazy(QuantifierType::ZeroOrOne),
+        } => {
+            character_group(cg).map(|rel_ops| generate_range_quantifier_block!(lazy, 0, 1, rel_ops))
+        }
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(cg)),
+            quantifier: Quantifier::Eager(QuantifierType::ZeroOrMore),
+        } => character_group(cg).map(|rel_ops| generate_range_quantifier_block!(eager, 0, rel_ops)),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(cg)),
+            quantifier: Quantifier::Lazy(QuantifierType::ZeroOrMore),
+        } => character_group(cg).map(|rel_ops| generate_range_quantifier_block!(lazy, 0, rel_ops)),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(cg)),
+            quantifier: Quantifier::Eager(QuantifierType::OneOrMore),
+        } => character_group(cg).map(|rel_ops| generate_range_quantifier_block!(eager, 1, rel_ops)),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(cg)),
+            quantifier: Quantifier::Lazy(QuantifierType::OneOrMore),
+        } => character_group(cg).map(|rel_ops| generate_range_quantifier_block!(lazy, 1, rel_ops)),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(cg)),
+            quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(cnt))),
+        } => character_group(cg).map(|rel_ops| {
+            let multiple_of_len = rel_ops.len() * (cnt as usize);
+
+            rel_ops.into_iter().cycle().take(multiple_of_len).collect()
+        }),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(cg)),
+            quantifier: Quantifier::Lazy(QuantifierType::MatchExactRange(Integer(cnt))),
+        } => character_group(cg).map(|rel_ops| {
+            let multiple_of_len = rel_ops.len() * (cnt as usize);
+
+            rel_ops.into_iter().cycle().take(multiple_of_len).collect()
+        }),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(cg)),
+            quantifier: Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(lower))),
+        } => character_group(cg)
+            .map(|rel_ops| generate_range_quantifier_block!(eager, lower, rel_ops)),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(cg)),
+            quantifier: Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(lower))),
+        } => character_group(cg)
+            .map(|rel_ops| generate_range_quantifier_block!(lazy, lower, rel_ops)),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(cg)),
+            quantifier:
+                Quantifier::Eager(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(lower),
+                    upper_bound: Integer(upper),
+                }),
+        } => character_group(cg)
+            .map(|rel_ops| generate_range_quantifier_block!(eager, lower, upper, rel_ops)),
+        Match::WithQuantifier {
+            item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(cg)),
+            quantifier:
+                Quantifier::Lazy(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(lower),
+                    upper_bound: Integer(upper),
+                }),
+        } => character_group(cg)
+            .map(|rel_ops| generate_range_quantifier_block!(lazy, lower, upper, rel_ops)),
 
         // Unicode categories
         Match::WithQuantifier {
@@ -1238,5 +1309,100 @@ mod tests {
                 ])),
             compile(regex_ast)
         );
+    }
+
+    #[test]
+    fn should_compile_character_groups_with_quantifiers() {
+        let quantifier_and_expected_opcodes = vec![
+            // approximate to `^[0-9]?`
+            (
+                Quantifier::Eager(QuantifierType::ZeroOrOne),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(2))),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^[0-9]??`
+            (
+                Quantifier::Lazy(QuantifierType::ZeroOrOne),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(1))),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^[0-9]*`
+            (
+                Quantifier::Eager(QuantifierType::ZeroOrMore),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(3))),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^[0-9]*?`
+            (
+                Quantifier::Lazy(QuantifierType::ZeroOrMore),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^[0-9]+`
+            (
+                Quantifier::Eager(QuantifierType::OneOrMore),
+                vec![
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(4))),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(1))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^[0-9]+?`
+            (
+                Quantifier::Lazy(QuantifierType::OneOrMore),
+                vec![
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(2))),
+                    Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(1))),
+                    Opcode::Match,
+                ],
+            ),
+        ];
+
+        for (id, (quantifier, expected_opcodes)) in
+            quantifier_and_expected_opcodes.into_iter().enumerate()
+        {
+            let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+                SubExpressionItem::Match(Match::WithQuantifier {
+                    item: MatchItem::MatchCharacterClass(MatchCharacterClass::CharacterGroup(
+                        CharacterGroup::Items(vec![CharacterGroupItem::CharacterRange(
+                            Char('0'),
+                            Char('9'),
+                        )]),
+                    )),
+                    quantifier,
+                }),
+            ])]));
+
+            let res = compile(regex_ast);
+            assert_eq!(
+                (
+                    id,
+                    Ok(Instructions::default()
+                        .with_sets(vec![CharacterSet::inclusive(CharacterAlphabet::Range(
+                            '0'..='9'
+                        ))])
+                        .with_opcodes(expected_opcodes))
+                ),
+                (id, res)
+            );
+        }
     }
 }
