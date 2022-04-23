@@ -742,6 +742,7 @@ mod tests {
     #[test]
     fn should_parse_character_group_items() {
         use ast::*;
+
         let input_output = vec![
             (
                 "^[a]",
@@ -784,6 +785,45 @@ mod tests {
                             item: MatchItem::MatchCharacterClass(
                                 MatchCharacterClass::CharacterGroup(output)
                             )
+                        }),])
+                    ])))
+                ),
+                (test_id, res)
+            )
+        }
+
+        // with quantifiers
+        let input_output = vec![
+            ("^[ab]?", QuantifierType::ZeroOrOne),
+            ("^[ab]*", QuantifierType::ZeroOrMore),
+            ("^[ab]+", QuantifierType::OneOrMore),
+            ("^[ab]{1}", QuantifierType::MatchExactRange(Integer(1))),
+            ("^[ab]{1,}", QuantifierType::MatchAtLeastRange(Integer(1))),
+            (
+                "^[ab]{1,2}",
+                QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(1),
+                    upper_bound: Integer(2),
+                },
+            ),
+        ];
+
+        for (test_id, (input, quantifier_ty)) in input_output.into_iter().enumerate() {
+            let input = input.chars().enumerate().collect::<Vec<(usize, char)>>();
+
+            let res = parse(&input);
+            assert_eq!(
+                (
+                    test_id,
+                    Ok(Regex::StartOfStringAnchored(Expression(vec![
+                        SubExpression(vec![SubExpressionItem::Match(Match::WithQuantifier {
+                            item: MatchItem::MatchCharacterClass(
+                                MatchCharacterClass::CharacterGroup(CharacterGroup::Items(vec![
+                                    CharacterGroupItem::Char(Char('a')),
+                                    CharacterGroupItem::Char(Char('b')),
+                                ]))
+                            ),
+                            quantifier: Quantifier::Eager(quantifier_ty)
                         }),])
                     ])))
                 ),
