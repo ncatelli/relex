@@ -127,7 +127,7 @@ fn subexpression(subexpr: ast::SubExpression) -> Result<RelativeOpcodes, String>
         .into_iter()
         .map(|subexpr_item| match subexpr_item {
             ast::SubExpressionItem::Match(m) => match_item(m),
-            ast::SubExpressionItem::Group(_) => todo!(),
+            ast::SubExpressionItem::Group(g) => group(g),
             ast::SubExpressionItem::Anchor(_) => todo!(),
             ast::SubExpressionItem::Backreference(_) => unimplemented!(),
         })
@@ -750,6 +750,23 @@ fn alternations_for_supplied_relative_opcodes(
         .collect();
 
     Ok(compiled_ops_with_applied_alternations)
+}
+
+// Groups
+
+fn group(g: ast::Group) -> Result<RelativeOpcodes, String> {
+    match g {
+        ast::Group::Capturing { expression: _ } => todo!(),
+        ast::Group::CapturingWithQuantifier {
+            expression: _,
+            quantifier: _,
+        } => todo!(),
+        ast::Group::NonCapturing { expression: expr } => expression(expr),
+        ast::Group::NonCapturingWithQuantifier {
+            expression: _,
+            quantifier: _,
+        } => todo!(),
+    }
 }
 
 #[cfg(test)]
@@ -1406,5 +1423,25 @@ mod tests {
                 (id, res)
             );
         }
+    }
+
+    #[test]
+    fn should_compile_non_capturing_group() {
+        // approximate to `^(a)`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Group(Group::NonCapturing {
+                expression: Expression(vec![SubExpression(vec![SubExpressionItem::Match(
+                    Match::WithoutQuantifier {
+                        item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                    },
+                )])]),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::default()
+                .with_opcodes(vec![Opcode::Consume(InstConsume::new('a')), Opcode::Match])),
+            compile(regex_ast)
+        );
     }
 }
