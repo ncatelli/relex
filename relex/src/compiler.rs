@@ -1427,7 +1427,7 @@ mod tests {
 
     #[test]
     fn should_compile_non_capturing_group() {
-        // approximate to `^(a)`
+        // approximate to `^(?:a)`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Group(Group::NonCapturing {
                 expression: Expression(vec![SubExpression(vec![SubExpressionItem::Match(
