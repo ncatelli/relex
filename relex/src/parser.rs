@@ -833,6 +833,110 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_group_items() {
+        use ast::*;
+
+        let input_output = vec![
+            (
+                "^(a)",
+                Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+                    SubExpressionItem::Group(Group::Capturing {
+                        expression: Expression(vec![SubExpression(vec![
+                            SubExpressionItem::Match(Match::WithoutQuantifier {
+                                item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                            }),
+                        ])]),
+                    }),
+                ])])),
+            ),
+            (
+                "^(a)?",
+                Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+                    SubExpressionItem::Group(Group::CapturingWithQuantifier {
+                        expression: Expression(vec![SubExpression(vec![
+                            SubExpressionItem::Match(Match::WithoutQuantifier {
+                                item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                            }),
+                        ])]),
+                        quantifier: Quantifier::Eager(QuantifierType::ZeroOrOne),
+                    }),
+                ])])),
+            ),
+            (
+                "^(?:a)",
+                Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+                    SubExpressionItem::Group(Group::NonCapturing {
+                        expression: Expression(vec![SubExpression(vec![
+                            SubExpressionItem::Match(Match::WithoutQuantifier {
+                                item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                            }),
+                        ])]),
+                    }),
+                ])])),
+            ),
+            (
+                "^(?:a)?",
+                Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+                    SubExpressionItem::Group(Group::NonCapturingWithQuantifier {
+                        expression: Expression(vec![SubExpression(vec![
+                            SubExpressionItem::Match(Match::WithoutQuantifier {
+                                item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                            }),
+                        ])]),
+                        quantifier: Quantifier::Eager(QuantifierType::ZeroOrOne),
+                    }),
+                ])])),
+            ),
+        ];
+
+        for (test_id, (input, expected_regex_ast)) in input_output.into_iter().enumerate() {
+            let input = input.chars().enumerate().collect::<Vec<(usize, char)>>();
+
+            let res = parse(&input);
+            assert_eq!((test_id, Ok(expected_regex_ast)), (test_id, res))
+        }
+
+        // with quantifiers
+        let input_output = vec![
+            ("^[ab]?", QuantifierType::ZeroOrOne),
+            ("^[ab]*", QuantifierType::ZeroOrMore),
+            ("^[ab]+", QuantifierType::OneOrMore),
+            ("^[ab]{1}", QuantifierType::MatchExactRange(Integer(1))),
+            ("^[ab]{1,}", QuantifierType::MatchAtLeastRange(Integer(1))),
+            (
+                "^[ab]{1,2}",
+                QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(1),
+                    upper_bound: Integer(2),
+                },
+            ),
+        ];
+
+        for (test_id, (input, quantifier_ty)) in input_output.into_iter().enumerate() {
+            let input = input.chars().enumerate().collect::<Vec<(usize, char)>>();
+
+            let res = parse(&input);
+            assert_eq!(
+                (
+                    test_id,
+                    Ok(Regex::StartOfStringAnchored(Expression(vec![
+                        SubExpression(vec![SubExpressionItem::Match(Match::WithQuantifier {
+                            item: MatchItem::MatchCharacterClass(
+                                MatchCharacterClass::CharacterGroup(CharacterGroup::Items(vec![
+                                    CharacterGroupItem::Char(Char('a')),
+                                    CharacterGroupItem::Char(Char('b')),
+                                ]))
+                            ),
+                            quantifier: Quantifier::Eager(quantifier_ty)
+                        }),])
+                    ])))
+                ),
+                (test_id, res)
+            )
+        }
+    }
+
+    #[test]
     fn should_parse_any_match() {
         use ast::*;
         let input = ".".chars().enumerate().collect::<Vec<(usize, char)>>();
