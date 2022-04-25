@@ -1,5 +1,10 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use super::ast;
 use relex_runtime::*;
+
+/// Tracks an incrementing identifier for save groups.
+static SAVE_GROUP_ID: AtomicUsize = AtomicUsize::new(0);
 
 /// A internal representation of the `relex_runtime::Opcode` type, with relative
 /// addressing.
@@ -756,12 +761,32 @@ fn alternations_for_supplied_relative_opcodes(
 
 fn group(g: ast::Group) -> Result<RelativeOpcodes, String> {
     match g {
-        ast::Group::Capturing { expression: _ } => todo!(),
+        ast::Group::Capturing { expression: expr } => {
+            let save_group_id = SAVE_GROUP_ID.fetch_add(1, Ordering::SeqCst);
+            let save_group_prefix = [RelativeOpcode::StartSave(save_group_id)];
+            let save_group_suffix = [
+                RelativeOpcode::EndSave(save_group_id),
+                RelativeOpcode::Match,
+            ];
+
+            expression(expr).map(|insts| {
+                save_group_prefix
+                    .into_iter()
+                    .chain(insts.into_iter())
+                    .chain(save_group_suffix.into_iter())
+                    .collect()
+            })
+        }
         ast::Group::CapturingWithQuantifier {
             expression: _,
             quantifier: _,
         } => todo!(),
-        ast::Group::NonCapturing { expression: expr } => expression(expr),
+        ast::Group::NonCapturing { expression: expr } => expression(expr).map(|insts| {
+            insts
+                .into_iter()
+                .chain([RelativeOpcode::Match].into_iter())
+                .collect()
+        }),
         ast::Group::NonCapturingWithQuantifier {
             expression: _,
             quantifier: _,
@@ -1426,6 +1451,42 @@ mod tests {
     }
 
     #[test]
+    fn should_compile_capturing_group() {
+        // approximate to `^(a)(b)`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Group(Group::Capturing {
+                expression: Expression(vec![SubExpression(vec![SubExpressionItem::Match(
+                    Match::WithoutQuantifier {
+                        item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                    },
+                )])]),
+            }),
+            SubExpressionItem::Group(Group::Capturing {
+                expression: Expression(vec![SubExpression(vec![SubExpressionItem::Match(
+                    Match::WithoutQuantifier {
+                        item: MatchItem::MatchCharacter(MatchCharacter(Char('b'))),
+                    },
+                )])]),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::default().with_opcodes(vec![
+                Opcode::StartSave(InstStartSave::new(0)),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::EndSave(InstEndSave::new(0)),
+                Opcode::Match,
+                Opcode::StartSave(InstStartSave::new(1)),
+                Opcode::Consume(InstConsume::new('b')),
+                Opcode::EndSave(InstEndSave::new(1)),
+                Opcode::Match,
+                Opcode::Match
+            ])),
+            compile(regex_ast)
+        );
+    }
+
+    #[test]
     fn should_compile_non_capturing_group() {
         // approximate to `^(?:a)`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
@@ -1439,8 +1500,11 @@ mod tests {
         ])]));
 
         assert_eq!(
-            Ok(Instructions::default()
-                .with_opcodes(vec![Opcode::Consume(InstConsume::new('a')), Opcode::Match])),
+            Ok(Instructions::default().with_opcodes(vec![
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::Match,
+                Opcode::Match
+            ])),
             compile(regex_ast)
         );
     }
