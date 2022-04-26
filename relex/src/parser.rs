@@ -882,6 +882,25 @@ mod tests {
                 ])])),
             ),
             (
+                "^(a(b))",
+                Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+                    SubExpressionItem::Group(Group::Capturing {
+                        expression: Expression(vec![SubExpression(vec![
+                            SubExpressionItem::Match(Match::WithoutQuantifier {
+                                item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                            }),
+                            SubExpressionItem::Group(Group::Capturing {
+                                expression: Expression(vec![SubExpression(vec![
+                                    SubExpressionItem::Match(Match::WithoutQuantifier {
+                                        item: MatchItem::MatchCharacter(MatchCharacter(Char('b'))),
+                                    }),
+                                ])]),
+                            }),
+                        ])]),
+                    }),
+                ])])),
+            ),
+            (
                 "^(?:a)",
                 Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
                     SubExpressionItem::Group(Group::NonCapturing {

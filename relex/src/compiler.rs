@@ -1452,6 +1452,9 @@ mod tests {
 
     #[test]
     fn should_compile_capturing_group() {
+        // reset save group id.
+        SAVE_GROUP_ID.store(0, std::sync::atomic::Ordering::SeqCst);
+
         // approximate to `^(a)(b)`
         let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
             SubExpressionItem::Group(Group::Capturing {
@@ -1479,6 +1482,45 @@ mod tests {
                 Opcode::StartSave(InstStartSave::new(1)),
                 Opcode::Consume(InstConsume::new('b')),
                 Opcode::EndSave(InstEndSave::new(1)),
+                Opcode::Match,
+                Opcode::Match
+            ])),
+            compile(regex_ast)
+        );
+    }
+
+    #[test]
+    fn should_compile_nested_capturing_group() {
+        // reset save group id.
+        SAVE_GROUP_ID.store(0, std::sync::atomic::Ordering::SeqCst);
+
+        // approximate to `^(a(b))`
+        let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+            SubExpressionItem::Group(Group::Capturing {
+                expression: Expression(vec![SubExpression(vec![
+                    SubExpressionItem::Match(Match::WithoutQuantifier {
+                        item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                    }),
+                    SubExpressionItem::Group(Group::Capturing {
+                        expression: Expression(vec![SubExpression(vec![
+                            SubExpressionItem::Match(Match::WithoutQuantifier {
+                                item: MatchItem::MatchCharacter(MatchCharacter(Char('b'))),
+                            }),
+                        ])]),
+                    }),
+                ])]),
+            }),
+        ])]));
+
+        assert_eq!(
+            Ok(Instructions::default().with_opcodes(vec![
+                Opcode::StartSave(InstStartSave::new(0)),
+                Opcode::Consume(InstConsume::new('a')),
+                Opcode::StartSave(InstStartSave::new(1)),
+                Opcode::Consume(InstConsume::new('b')),
+                Opcode::EndSave(InstEndSave::new(1)),
+                Opcode::Match,
+                Opcode::EndSave(InstEndSave::new(0)),
                 Opcode::Match,
                 Opcode::Match
             ])),

@@ -1217,6 +1217,31 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "subgroup matching terminates on internal match"]
+    fn should_evaluate_nested_group_expression() {
+        let prog = Instructions::default().with_opcodes(vec![
+            Opcode::StartSave(InstStartSave::new(0)),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::StartSave(InstStartSave::new(1)),
+            Opcode::Consume(InstConsume::new('b')),
+            Opcode::EndSave(InstEndSave::new(1)),
+            Opcode::Match,
+            Opcode::EndSave(InstEndSave::new(0)),
+            Opcode::Match,
+            Opcode::Match,
+        ]);
+
+        let res = run::<2>(&prog, "ab");
+        assert_eq!(
+            Some(vec![
+                SaveGroupSlot::complete(0, 0, 2),
+                SaveGroupSlot::complete(1, 1, 2),
+            ]),
+            res
+        );
+    }
+
+    #[test]
     fn should_retain_a_fixed_opcode_size() {
         use core::mem::size_of;
 
