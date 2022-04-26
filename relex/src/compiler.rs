@@ -764,10 +764,7 @@ fn group(g: ast::Group) -> Result<RelativeOpcodes, String> {
         ast::Group::Capturing { expression: expr } => {
             let save_group_id = SAVE_GROUP_ID.fetch_add(1, Ordering::SeqCst);
             let save_group_prefix = [RelativeOpcode::StartSave(save_group_id)];
-            let save_group_suffix = [
-                RelativeOpcode::EndSave(save_group_id),
-                RelativeOpcode::Match,
-            ];
+            let save_group_suffix = [RelativeOpcode::EndSave(save_group_id)];
 
             expression(expr).map(|insts| {
                 save_group_prefix
@@ -1478,11 +1475,9 @@ mod tests {
                 Opcode::StartSave(InstStartSave::new(0)),
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::EndSave(InstEndSave::new(0)),
-                Opcode::Match,
                 Opcode::StartSave(InstStartSave::new(1)),
                 Opcode::Consume(InstConsume::new('b')),
                 Opcode::EndSave(InstEndSave::new(1)),
-                Opcode::Match,
                 Opcode::Match
             ])),
             compile(regex_ast)
@@ -1519,9 +1514,7 @@ mod tests {
                 Opcode::StartSave(InstStartSave::new(1)),
                 Opcode::Consume(InstConsume::new('b')),
                 Opcode::EndSave(InstEndSave::new(1)),
-                Opcode::Match,
                 Opcode::EndSave(InstEndSave::new(0)),
-                Opcode::Match,
                 Opcode::Match
             ])),
             compile(regex_ast)

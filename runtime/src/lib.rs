@@ -1044,19 +1044,16 @@ mod tests {
     #[test]
     fn should_evaluate_multiple_save_groups_expression() {
         let (expected_res, prog) = (
-            vec![SaveGroupSlot::complete(0, 2), SaveGroupSlot::complete(1, 3)],
+            vec![SaveGroupSlot::complete(0, 2), SaveGroupSlot::complete(2, 3)],
             Instructions::default().with_opcodes(vec![
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                 Opcode::Any,
                 Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
-                Opcode::Split(InstSplit::new(InstIndex::from(9), InstIndex::from(4))),
                 Opcode::StartSave(InstStartSave::new(0)),
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::EndSave(InstEndSave::new(0)),
-                Opcode::Match,
                 Opcode::StartSave(InstStartSave::new(1)),
-                Opcode::Consume(InstConsume::new('a')),
                 Opcode::Consume(InstConsume::new('b')),
                 Opcode::EndSave(InstEndSave::new(1)),
                 Opcode::Match,
