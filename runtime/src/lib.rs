@@ -313,7 +313,7 @@ pub struct InstMatch;
 
 impl Display for InstMatch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Match: (END)",)
+        write!(f, "Match",)
     }
 }
 
@@ -1096,7 +1096,7 @@ mod tests {
             (vec![SaveGroupSlot::complete(0, 0, 3)], "aaaab"),
         ];
 
-        // `^aaa?`
+        // `^(aaa?)`
         let prog = Instructions::default().with_opcodes(vec![
             Opcode::StartSave(InstStartSave::new(0)),
             Opcode::Consume(InstConsume::new('a')),
@@ -1104,6 +1104,7 @@ mod tests {
             Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(5))),
             Opcode::Consume(InstConsume::new('a')),
             Opcode::EndSave(InstEndSave::new(0)),
+            Opcode::Match,
             Opcode::Match,
         ]);
 
@@ -1121,7 +1122,7 @@ mod tests {
             (Some(vec![SaveGroupSlot::complete(0, 0, 4)]), "aaaab"),
         ];
 
-        // `^aa(a?)?`
+        // `^(aaa??)`
         let prog = Instructions::default().with_opcodes(vec![
             Opcode::StartSave(InstStartSave::new(0)),
             Opcode::Consume(InstConsume::new('a')),
@@ -1130,6 +1131,7 @@ mod tests {
             Opcode::Consume(InstConsume::new('a')),
             Opcode::Consume(InstConsume::new('a')),
             Opcode::EndSave(InstEndSave::new(0)),
+            Opcode::Match,
             Opcode::Match,
         ]);
 
@@ -1205,12 +1207,38 @@ mod tests {
             Opcode::Consume(InstConsume::new('a')),
             Opcode::EndSave(InstEndSave::new(0)),
             Opcode::Match,
+            Opcode::Match,
         ]);
 
         for (case_id, (expected_res, input)) in tests.into_iter().enumerate() {
             let res = run::<1>(&prog, input);
             assert_eq!((case_id, Some(expected_res)), (case_id, res));
         }
+    }
+
+    #[test]
+    #[ignore = "subgroup matching terminates on internal match"]
+    fn should_evaluate_nested_group_expression() {
+        let prog = Instructions::default().with_opcodes(vec![
+            Opcode::StartSave(InstStartSave::new(0)),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::StartSave(InstStartSave::new(1)),
+            Opcode::Consume(InstConsume::new('b')),
+            Opcode::EndSave(InstEndSave::new(1)),
+            Opcode::Match,
+            Opcode::EndSave(InstEndSave::new(0)),
+            Opcode::Match,
+            Opcode::Match,
+        ]);
+
+        let res = run::<2>(&prog, "ab");
+        assert_eq!(
+            Some(vec![
+                SaveGroupSlot::complete(0, 0, 2),
+                SaveGroupSlot::complete(1, 1, 2),
+            ]),
+            res
+        );
     }
 
     #[test]
@@ -1226,12 +1254,14 @@ mod tests {
             Opcode::Consume(InstConsume::new('a')),
             Opcode::Consume(InstConsume::new('b')),
             Opcode::Match,
+            Opcode::Match,
         ]);
 
         assert_eq!(
             "0000: Consume: 'a'
 0001: Consume: 'b'
-0002: Match: (END)\n",
+0002: Match
+0003: Match\n",
             prog.to_string()
         )
     }
