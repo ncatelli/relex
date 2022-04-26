@@ -762,10 +762,6 @@ pub fn run<const SG: usize>(program: &Instructions, input: &str) -> Option<Vec<S
                         input,
                     );
                 }
-                // next value doesn't match
-                Some(Opcode::Consume(_)) => {
-                    continue;
-                }
 
                 Some(Opcode::ConsumeSet(InstConsumeSet { idx: set_idx }))
                     if next_char.map_or(false, |c| {
@@ -787,9 +783,6 @@ pub fn run<const SG: usize>(program: &Instructions, input: &str) -> Option<Vec<S
                         input_idx + 1,
                         input,
                     );
-                }
-                Some(Opcode::ConsumeSet(_)) => {
-                    continue;
                 }
 
                 Some(Opcode::Match) => {
