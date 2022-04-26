@@ -41,7 +41,7 @@ pub fn linear_input_size_comparison(c: &mut Criterion) {
                 BenchmarkId::new("find match with sample size of defined length", sample_size),
                 &(input, sample_size),
                 |b, (input, input_size)| {
-                    let expected_res = SaveGroupSlot::complete(0, *input_size - 2, *input_size);
+                    let expected_res = SaveGroupSlot::complete(*input_size - 2, *input_size);
 
                     b.iter(|| {
                         let res = run::<1>(&prog, input);
@@ -87,7 +87,7 @@ pub fn linear_input_size_comparison_against_set_match(c: &mut Criterion) {
                 ),
                 &(input, sample_size),
                 |b, (input, input_size)| {
-                    let expected_res = SaveGroupSlot::complete(0, *input_size - 2, *input_size);
+                    let expected_res = SaveGroupSlot::complete(*input_size - 2, *input_size);
 
                     b.iter(|| {
                         let res = run::<1>(&prog, input);
