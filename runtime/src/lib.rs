@@ -664,8 +664,8 @@ fn add_thread(
                     end: sp,
                 },
 
-                // this state should never be reached.
-                _ => panic!("attempting to close an unopened save."),
+                // if the save group is not open, return none.
+                _ => SaveGroup::None,
             };
             let next = inst_idx + 1;
 
@@ -1220,7 +1220,6 @@ mod tests {
             Opcode::EndSave(InstEndSave::new(1)),
             Opcode::Match,
             Opcode::EndSave(InstEndSave::new(0)),
-            Opcode::Match,
             Opcode::Match,
         ]);
 
