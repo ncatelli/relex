@@ -64,6 +64,10 @@ pub enum SaveGroup {
 }
 
 impl SaveGroup {
+    pub fn is_allocated(&self) -> bool {
+        matches!(self, Self::Allocated { .. })
+    }
+
     pub fn allocated(slot_id: usize) -> Self {
         Self::Allocated { slot_id }
     }
@@ -717,13 +721,6 @@ pub fn run<const SG: usize>(program: &Instructions, input: &str) -> Option<Vec<S
                     break;
                 }
                 Some(Opcode::Any) => {
-                    /*let thread_local_save_group =
-                        if let SaveGroup::Allocated { slot_id } = thread_save_groups {
-                            SaveGroup::open(slot_id, input_idx)
-                        } else {
-                            thread_save_groups
-                        };
-                    */
                     let thread_local_save_group = thread_save_groups;
 
                     next_thread_list = add_thread(
@@ -738,7 +735,10 @@ pub fn run<const SG: usize>(program: &Instructions, input: &str) -> Option<Vec<S
 
                 Some(Opcode::Consume(InstConsume { value })) if Some(*value) == next_char => {
                     let mut thread_local_save_group = thread_save_groups;
-                    for thr in thread_local_save_group.iter_mut() {
+                    for thr in thread_local_save_group
+                        .iter_mut()
+                        .filter(|t| t.is_allocated())
+                    {
                         if let SaveGroup::Allocated { slot_id } = thr {
                             *thr = SaveGroup::open(*slot_id, input_idx);
                         }
@@ -760,7 +760,10 @@ pub fn run<const SG: usize>(program: &Instructions, input: &str) -> Option<Vec<S
                     }) =>
                 {
                     let mut thread_local_save_group = thread_save_groups;
-                    for thr in thread_local_save_group.iter_mut() {
+                    for thr in thread_local_save_group
+                        .iter_mut()
+                        .filter(|t| t.is_allocated())
+                    {
                         if let SaveGroup::Allocated { slot_id } = thr {
                             *thr = SaveGroup::open(*slot_id, input_idx);
                         }
