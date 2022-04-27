@@ -38,7 +38,7 @@ pub fn linear_input_size_comparison(c: &mut Criterion) {
         .for_each(|(input, sample_size)| {
             group.throughput(Throughput::Elements(sample_size as u64));
             group.bench_with_input(
-                BenchmarkId::new("find match with sample size of defined length", sample_size),
+                BenchmarkId::new("input length of size", sample_size),
                 &(input, sample_size),
                 |b, (input, input_size)| {
                     let expected_res = SaveGroupSlot::complete(*input_size - 2, *input_size);
@@ -56,7 +56,7 @@ pub fn linear_input_size_comparison(c: &mut Criterion) {
 }
 
 pub fn linear_input_size_comparison_against_set_match(c: &mut Criterion) {
-    let mut group = c.benchmark_group("exponential input length comparison for set matching");
+    let mut group = c.benchmark_group("input length comparison for set matching");
     let input = "ab";
     let pad = "xy";
 
@@ -81,10 +81,7 @@ pub fn linear_input_size_comparison_against_set_match(c: &mut Criterion) {
         .for_each(|(input, sample_size)| {
             group.throughput(Throughput::Elements(sample_size as u64));
             group.bench_with_input(
-                BenchmarkId::new(
-                    "find match in set with sample size of defined length",
-                    sample_size,
-                ),
+                BenchmarkId::new("input length of size", sample_size),
                 &(input, sample_size),
                 |b, (input, input_size)| {
                     let expected_res = [SaveGroupSlot::complete(*input_size - 2, *input_size)];
