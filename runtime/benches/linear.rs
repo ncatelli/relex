@@ -87,14 +87,11 @@ pub fn linear_input_size_comparison_against_set_match(c: &mut Criterion) {
                 ),
                 &(input, sample_size),
                 |b, (input, input_size)| {
-                    let expected_res = SaveGroupSlot::complete(*input_size - 2, *input_size);
+                    let expected_res = [SaveGroupSlot::complete(*input_size - 2, *input_size)];
 
                     b.iter(|| {
                         let res = run::<1>(&prog, input);
-                        assert_eq!(
-                            Some(Some(&expected_res)),
-                            res.as_ref().map(|slots| slots.get(0))
-                        )
+                        assert_eq!(Some(expected_res), res)
                     })
                 },
             );
