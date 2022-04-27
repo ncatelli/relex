@@ -764,10 +764,7 @@ fn group(g: ast::Group) -> Result<RelativeOpcodes, String> {
         ast::Group::Capturing { expression: expr } => {
             let save_group_id = SAVE_GROUP_ID.fetch_add(1, Ordering::SeqCst);
             let save_group_prefix = [RelativeOpcode::StartSave(save_group_id)];
-            let save_group_suffix = [
-                RelativeOpcode::EndSave(save_group_id),
-                RelativeOpcode::Match,
-            ];
+            let save_group_suffix = [RelativeOpcode::EndSave(save_group_id)];
 
             expression(expr).map(|insts| {
                 save_group_prefix
@@ -781,12 +778,9 @@ fn group(g: ast::Group) -> Result<RelativeOpcodes, String> {
             expression: _,
             quantifier: _,
         } => todo!(),
-        ast::Group::NonCapturing { expression: expr } => expression(expr).map(|insts| {
-            insts
-                .into_iter()
-                .chain([RelativeOpcode::Match].into_iter())
-                .collect()
-        }),
+        ast::Group::NonCapturing { expression: expr } => {
+            expression(expr).map(|insts| insts.into_iter().collect())
+        }
         ast::Group::NonCapturingWithQuantifier {
             expression: _,
             quantifier: _,
@@ -1478,11 +1472,9 @@ mod tests {
                 Opcode::StartSave(InstStartSave::new(0)),
                 Opcode::Consume(InstConsume::new('a')),
                 Opcode::EndSave(InstEndSave::new(0)),
-                Opcode::Match,
                 Opcode::StartSave(InstStartSave::new(1)),
                 Opcode::Consume(InstConsume::new('b')),
                 Opcode::EndSave(InstEndSave::new(1)),
-                Opcode::Match,
                 Opcode::Match
             ])),
             compile(regex_ast)
@@ -1519,9 +1511,7 @@ mod tests {
                 Opcode::StartSave(InstStartSave::new(1)),
                 Opcode::Consume(InstConsume::new('b')),
                 Opcode::EndSave(InstEndSave::new(1)),
-                Opcode::Match,
                 Opcode::EndSave(InstEndSave::new(0)),
-                Opcode::Match,
                 Opcode::Match
             ])),
             compile(regex_ast)
@@ -1542,11 +1532,8 @@ mod tests {
         ])]));
 
         assert_eq!(
-            Ok(Instructions::default().with_opcodes(vec![
-                Opcode::Consume(InstConsume::new('a')),
-                Opcode::Match,
-                Opcode::Match
-            ])),
+            Ok(Instructions::default()
+                .with_opcodes(vec![Opcode::Consume(InstConsume::new('a')), Opcode::Match])),
             compile(regex_ast)
         );
     }
