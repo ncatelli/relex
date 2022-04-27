@@ -778,12 +778,9 @@ fn group(g: ast::Group) -> Result<RelativeOpcodes, String> {
             expression: _,
             quantifier: _,
         } => todo!(),
-        ast::Group::NonCapturing { expression: expr } => expression(expr).map(|insts| {
-            insts
-                .into_iter()
-                .chain([RelativeOpcode::Match].into_iter())
-                .collect()
-        }),
+        ast::Group::NonCapturing { expression: expr } => {
+            expression(expr).map(|insts| insts.into_iter().collect())
+        }
         ast::Group::NonCapturingWithQuantifier {
             expression: _,
             quantifier: _,
@@ -1535,11 +1532,8 @@ mod tests {
         ])]));
 
         assert_eq!(
-            Ok(Instructions::default().with_opcodes(vec![
-                Opcode::Consume(InstConsume::new('a')),
-                Opcode::Match,
-                Opcode::Match
-            ])),
+            Ok(Instructions::default()
+                .with_opcodes(vec![Opcode::Consume(InstConsume::new('a')), Opcode::Match])),
             compile(regex_ast)
         );
     }
