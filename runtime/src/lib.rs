@@ -2,7 +2,7 @@ use collections_ext::set::sparse::SparseSet;
 use std::fmt::{Debug, Display};
 
 /// Represents a defined match group for a pattern.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveGroupSlot {
     None,
     Complete { start: usize, end: usize },
@@ -579,7 +579,7 @@ fn get_at(input: &str, idx: usize) -> Option<char> {
 
 fn add_thread<const SG: usize>(
     program: &[Instruction],
-    save_groups: &mut Vec<SaveGroupSlot>,
+    save_groups: &mut [SaveGroupSlot; SG],
     mut thread_list: Threads<SG>,
     t: Thread<SG>,
     sp: usize,
@@ -682,7 +682,7 @@ fn add_thread<const SG: usize>(
 /// Executes a given program against an input. If a match is found an
 /// `Optional` vector of savegroups is returned. A match occurs if all
 /// savegroup slots are marked complete and pattern match is found.
-pub fn run<const SG: usize>(program: &Instructions, input: &str) -> Option<Vec<SaveGroupSlot>> {
+pub fn run<const SG: usize>(program: &Instructions, input: &str) -> Option<[SaveGroupSlot; SG]> {
     use core::mem::swap;
 
     let sets = &program.sets;
@@ -697,7 +697,7 @@ pub fn run<const SG: usize>(program: &Instructions, input: &str) -> Option<Vec<S
     // a running tracker of found matches
     let mut matches = 0;
 
-    let mut sub = vec![SaveGroupSlot::None; SG];
+    let mut sub = [SaveGroupSlot::None; SG];
 
     current_thread_list = add_thread(
         instructions,
@@ -817,7 +817,7 @@ mod tests {
     fn should_evaluate_simple_linear_match_expression() {
         let progs = vec![
             (
-                Some(vec![SaveGroupSlot::complete(0, 1)]),
+                Some([SaveGroupSlot::complete(0, 1)]),
                 Instructions::default().with_opcodes(vec![
                     Opcode::StartSave(InstStartSave::new(0)),
                     Opcode::Consume(InstConsume::new('a')),
@@ -856,10 +856,10 @@ mod tests {
             Opcode::Match,
         ]);
         let input_output = vec![
-            ("a", Some(vec![SaveGroupSlot::complete(0, 1)])),
-            ("b", Some(vec![SaveGroupSlot::complete(0, 1)])),
-            ("ab", Some(vec![SaveGroupSlot::complete(0, 1)])),
-            ("ba", Some(vec![SaveGroupSlot::complete(0, 1)])),
+            ("a", Some([SaveGroupSlot::complete(0, 1)])),
+            ("b", Some([SaveGroupSlot::complete(0, 1)])),
+            ("ab", Some([SaveGroupSlot::complete(0, 1)])),
+            ("ba", Some([SaveGroupSlot::complete(0, 1)])),
             ("c", None),
         ];
 
@@ -873,22 +873,22 @@ mod tests {
     fn should_evaluate_set_match_expression() {
         let progs = vec![
             (
-                Some(vec![SaveGroupSlot::complete(0, 1)]),
+                Some([SaveGroupSlot::complete(0, 1)]),
                 Opcode::ConsumeSet(InstConsumeSet::member_of(0)),
             ),
             (None, Opcode::ConsumeSet(InstConsumeSet::member_of(1))),
             (
-                Some(vec![SaveGroupSlot::complete(0, 1)]),
+                Some([SaveGroupSlot::complete(0, 1)]),
                 Opcode::ConsumeSet(InstConsumeSet::member_of(3)),
             ),
             (None, Opcode::ConsumeSet(InstConsumeSet::member_of(2))),
             (
-                Some(vec![SaveGroupSlot::complete(0, 1)]),
+                Some([SaveGroupSlot::complete(0, 1)]),
                 Opcode::ConsumeSet(InstConsumeSet::member_of(4)),
             ),
             (None, Opcode::ConsumeSet(InstConsumeSet::member_of(5))),
             (
-                Some(vec![SaveGroupSlot::complete(0, 1)]),
+                Some([SaveGroupSlot::complete(0, 1)]),
                 Opcode::ConsumeSet(InstConsumeSet::member_of(7)),
             ),
             (None, Opcode::ConsumeSet(InstConsumeSet::member_of(6))),
@@ -923,8 +923,8 @@ mod tests {
     fn should_evaluate_eager_character_class_zero_or_one_expression() {
         let tests = vec![
             (None, "aab"),
-            (Some(vec![SaveGroupSlot::complete(0, 1)]), "1ab"),
-            (Some(vec![SaveGroupSlot::complete(0, 2)]), "123"),
+            (Some([SaveGroupSlot::complete(0, 1)]), "1ab"),
+            (Some([SaveGroupSlot::complete(0, 2)]), "123"),
         ];
 
         // `^\d\d?` | `^[0-9][0-9]?`
@@ -951,8 +951,8 @@ mod tests {
     fn should_evaluate_eager_character_class_zero_or_more_expression() {
         let tests = vec![
             (None, "aab"),
-            (Some(vec![SaveGroupSlot::complete(0, 1)]), "1ab"),
-            (Some(vec![SaveGroupSlot::complete(0, 3)]), "123"),
+            (Some([SaveGroupSlot::complete(0, 1)]), "1ab"),
+            (Some([SaveGroupSlot::complete(0, 3)]), "123"),
         ];
 
         // `^\d\d*` | `^[0-9][0-9]*`
@@ -980,8 +980,8 @@ mod tests {
     fn should_evaluate_eager_character_class_one_or_more_expression() {
         let tests = vec![
             (None, "aab"),
-            (Some(vec![SaveGroupSlot::complete(0, 1)]), "1ab"),
-            (Some(vec![SaveGroupSlot::complete(0, 3)]), "123"),
+            (Some([SaveGroupSlot::complete(0, 1)]), "1ab"),
+            (Some([SaveGroupSlot::complete(0, 3)]), "123"),
         ];
 
         // `^\d+` | `^[0-9]+`
@@ -1009,7 +1009,7 @@ mod tests {
     fn should_evaluate_consecutive_diverging_match_expression() {
         let progs = vec![
             (
-                vec![SaveGroupSlot::complete(0, 2)],
+                [SaveGroupSlot::complete(0, 2)],
                 Instructions::default().with_opcodes(vec![
                     Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                     Opcode::Any,
@@ -1022,7 +1022,7 @@ mod tests {
                 ]),
             ),
             (
-                vec![SaveGroupSlot::complete(1, 3)],
+                [SaveGroupSlot::complete(1, 3)],
                 Instructions::default().with_opcodes(vec![
                     Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                     Opcode::Any,
@@ -1048,7 +1048,7 @@ mod tests {
     fn should_evaluate_multiple_save_groups_expression() {
         // (aa)(b)
         let (expected_res, prog) = (
-            vec![SaveGroupSlot::complete(0, 2), SaveGroupSlot::complete(2, 3)],
+            [SaveGroupSlot::complete(0, 2), SaveGroupSlot::complete(2, 3)],
             Instructions::default().with_opcodes(vec![
                 Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
                 Opcode::Any,
@@ -1073,9 +1073,9 @@ mod tests {
     #[test]
     fn should_evaluate_eager_match_zero_or_one_expression() {
         let tests = vec![
-            (vec![SaveGroupSlot::complete(0, 2)], "aab"),
-            (vec![SaveGroupSlot::complete(0, 3)], "aaab"),
-            (vec![SaveGroupSlot::complete(0, 3)], "aaaab"),
+            ([SaveGroupSlot::complete(0, 2)], "aab"),
+            ([SaveGroupSlot::complete(0, 3)], "aaab"),
+            ([SaveGroupSlot::complete(0, 3)], "aaaab"),
         ];
 
         // `^(aaa?)`
@@ -1100,8 +1100,8 @@ mod tests {
     fn should_evaluate_lazy_match_zero_or_one_expression() {
         let tests = vec![
             (None, "aab"),
-            (Some(vec![SaveGroupSlot::complete(0, 3)]), "aaab"),
-            (Some(vec![SaveGroupSlot::complete(0, 4)]), "aaaab"),
+            (Some([SaveGroupSlot::complete(0, 3)]), "aaab"),
+            (Some([SaveGroupSlot::complete(0, 4)]), "aaaab"),
         ];
 
         // `^(aaa??)`
@@ -1126,8 +1126,8 @@ mod tests {
     #[test]
     fn should_evaluate_eager_match_exact_quantifier_expression() {
         let tests = vec![
-            (vec![SaveGroupSlot::complete(0, 2)], "aab"),
-            (vec![SaveGroupSlot::complete(0, 2)], "aaab"),
+            ([SaveGroupSlot::complete(0, 2)], "aab"),
+            ([SaveGroupSlot::complete(0, 2)], "aaab"),
         ];
 
         let prog = Instructions::new(
@@ -1150,8 +1150,8 @@ mod tests {
     #[test]
     fn should_evaluate_eager_match_atleast_quantifier_expression() {
         let tests = vec![
-            (vec![SaveGroupSlot::complete(0, 2)], "aab"),
-            (vec![SaveGroupSlot::complete(0, 3)], "aaab"),
+            ([SaveGroupSlot::complete(0, 2)], "aab"),
+            ([SaveGroupSlot::complete(0, 3)], "aaab"),
         ];
 
         let prog = Instructions::default().with_opcodes(vec![
@@ -1174,9 +1174,9 @@ mod tests {
     #[test]
     fn should_evaluate_eager_match_between_quantifier_expression() {
         let tests = vec![
-            (vec![SaveGroupSlot::complete(0, 2)], "aab"),
-            (vec![SaveGroupSlot::complete(0, 3)], "aaab"),
-            (vec![SaveGroupSlot::complete(0, 4)], "aaaab"),
+            ([SaveGroupSlot::complete(0, 2)], "aab"),
+            ([SaveGroupSlot::complete(0, 3)], "aaab"),
+            ([SaveGroupSlot::complete(0, 4)], "aaaab"),
         ];
 
         let prog = Instructions::default().with_opcodes(vec![
@@ -1213,10 +1213,7 @@ mod tests {
 
         let res = run::<2>(&prog, "ab");
         assert_eq!(
-            Some(vec![
-                SaveGroupSlot::complete(0, 2),
-                SaveGroupSlot::complete(1, 2),
-            ]),
+            Some([SaveGroupSlot::complete(0, 2), SaveGroupSlot::complete(1, 2),]),
             res
         );
     }

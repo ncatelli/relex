@@ -18,7 +18,7 @@ fn pad_input_to_length_with(prefix: &str, suffix: &str, pad_str: &str, len: usiz
 }
 
 pub fn exponential_input_size_comparison(c: &mut Criterion) {
-    let mut group = c.benchmark_group("exponential pattern length compilation comparison");
+    let mut group = c.benchmark_group("pattern length compilation comparison");
     let pad = "ab";
 
     (1..10)
@@ -28,7 +28,7 @@ pub fn exponential_input_size_comparison(c: &mut Criterion) {
         .for_each(|(input, sample_size)| {
             group.throughput(Throughput::Elements(sample_size as u64));
             group.bench_with_input(
-                BenchmarkId::new("find match with sample size of defined length", sample_size),
+                BenchmarkId::new("pattern input length of size", sample_size),
                 &input,
                 |b, input| {
                     b.iter(|| {
