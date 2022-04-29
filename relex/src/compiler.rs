@@ -760,6 +760,8 @@ fn alternations_for_supplied_relative_opcodes(
 // Groups
 
 fn group(g: ast::Group) -> Result<RelativeOpcodes, String> {
+    use ast::{Integer, Quantifier, QuantifierType};
+
     match g {
         ast::Group::Capturing { expression: expr } => {
             let save_group_id = SAVE_GROUP_ID.fetch_add(1, Ordering::SeqCst);
@@ -778,13 +780,51 @@ fn group(g: ast::Group) -> Result<RelativeOpcodes, String> {
             expression: _,
             quantifier: _,
         } => todo!(),
-        ast::Group::NonCapturing { expression: expr } => {
-            expression(expr).map(|insts| insts.into_iter().collect())
-        }
+
+        ast::Group::NonCapturing { expression: expr } => expression(expr),
         ast::Group::NonCapturingWithQuantifier {
-            expression: _,
-            quantifier: _,
-        } => todo!(),
+            expression: expr,
+            quantifier,
+        } => expression(expr).map(|rel_ops| match quantifier {
+            Quantifier::Eager(QuantifierType::ZeroOrOne) => {
+                generate_range_quantifier_block!(eager, 0, 1, rel_ops)
+            }
+            Quantifier::Lazy(QuantifierType::ZeroOrOne) => {
+                generate_range_quantifier_block!(lazy, 0, 1, rel_ops)
+            }
+            Quantifier::Eager(QuantifierType::ZeroOrMore) => {
+                generate_range_quantifier_block!(eager, 0, rel_ops)
+            }
+            Quantifier::Lazy(QuantifierType::ZeroOrMore) => {
+                generate_range_quantifier_block!(lazy, 0, rel_ops)
+            }
+            Quantifier::Eager(QuantifierType::OneOrMore) => {
+                generate_range_quantifier_block!(eager, 1, rel_ops)
+            }
+            Quantifier::Lazy(QuantifierType::OneOrMore) => {
+                generate_range_quantifier_block!(lazy, 1, rel_ops)
+            }
+            Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(lower))) => {
+                generate_range_quantifier_block!(eager, lower, rel_ops)
+            }
+            Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(lower))) => {
+                generate_range_quantifier_block!(lazy, lower, rel_ops)
+            }
+            Quantifier::Eager(QuantifierType::MatchBetweenRange {
+                lower_bound: Integer(lower),
+                upper_bound: Integer(upper),
+            }) => generate_range_quantifier_block!(eager, lower, upper, rel_ops),
+            Quantifier::Lazy(QuantifierType::MatchBetweenRange {
+                lower_bound: Integer(lower),
+                upper_bound: Integer(upper),
+            }) => generate_range_quantifier_block!(lazy, lower, upper, rel_ops),
+            Quantifier::Lazy(QuantifierType::MatchExactRange(Integer(cnt)))
+            | Quantifier::Eager(QuantifierType::MatchExactRange(Integer(cnt))) => {
+                let multiple_of_len = rel_ops.len() * (cnt as usize);
+
+                rel_ops.into_iter().cycle().take(multiple_of_len).collect()
+            }
+        }),
     }
 }
 
@@ -1536,5 +1576,169 @@ mod tests {
                 .with_opcodes(vec![Opcode::Consume(InstConsume::new('a')), Opcode::Match])),
             compile(regex_ast)
         );
+    }
+
+    #[test]
+    fn should_compile_quantified_non_capturing_group() {
+        let quantifier_and_expected_opcodes = vec![
+            // approximate to `^(?:a)?`
+            (
+                Quantifier::Eager(QuantifierType::ZeroOrOne),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(2))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a)??`
+            (
+                Quantifier::Lazy(QuantifierType::ZeroOrOne),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(1))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a)*`
+            (
+                Quantifier::Eager(QuantifierType::ZeroOrMore),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(3))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a)*?`
+            (
+                Quantifier::Lazy(QuantifierType::ZeroOrMore),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a)+`
+            (
+                Quantifier::Eager(QuantifierType::OneOrMore),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(4))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(1))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a)+?`
+            (
+                Quantifier::Lazy(QuantifierType::OneOrMore),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(2))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(1))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a){2}`
+            (
+                Quantifier::Eager(QuantifierType::MatchExactRange(Integer(2))),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a){2}?`
+            (
+                Quantifier::Lazy(QuantifierType::MatchExactRange(Integer(2))),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a){2,}`
+            (
+                Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(2))),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(5))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(2))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a){2,}?`
+            (
+                Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(2))),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(3))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(2))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a){2,4}`
+            (
+                Quantifier::Eager(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(2),
+                    upper_bound: Integer(4),
+                }),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(4))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(6))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a){2,4}?`
+            (
+                Quantifier::Lazy(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(2),
+                    upper_bound: Integer(4),
+                }),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(3))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(6), InstIndex::from(5))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Match,
+                ],
+            ),
+        ];
+
+        for (id, (quantifier, expected_opcodes)) in
+            quantifier_and_expected_opcodes.into_iter().enumerate()
+        {
+            let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+                SubExpressionItem::Group(Group::NonCapturing {
+                    expression: Expression(vec![SubExpression(vec![SubExpressionItem::Match(
+                        Match::WithQuantifier {
+                            item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                            quantifier,
+                        },
+                    )])]),
+                }),
+            ])]));
+
+            let res = compile(regex_ast);
+            assert_eq!(
+                (
+                    id,
+                    Ok(Instructions::default().with_opcodes(expected_opcodes))
+                ),
+                (id, res)
+            );
+        }
     }
 }
