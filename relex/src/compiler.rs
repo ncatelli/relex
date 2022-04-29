@@ -760,6 +760,8 @@ fn alternations_for_supplied_relative_opcodes(
 // Groups
 
 fn group(g: ast::Group) -> Result<RelativeOpcodes, String> {
+    use ast::{Integer, Quantifier, QuantifierType};
+
     match g {
         ast::Group::Capturing { expression: expr } => {
             let save_group_id = SAVE_GROUP_ID.fetch_add(1, Ordering::SeqCst);
@@ -778,12 +780,64 @@ fn group(g: ast::Group) -> Result<RelativeOpcodes, String> {
             expression: _,
             quantifier: _,
         } => todo!(),
-        ast::Group::NonCapturing { expression: expr } => {
-            expression(expr).map(|insts| insts.into_iter().collect())
-        }
+
+        ast::Group::NonCapturing { expression: expr } => expression(expr),
         ast::Group::NonCapturingWithQuantifier {
-            expression: _,
-            quantifier: _,
+            expression: _expr,
+            quantifier: Quantifier::Eager(QuantifierType::ZeroOrOne),
+        } => todo!(),
+        ast::Group::NonCapturingWithQuantifier {
+            expression: _expr,
+            quantifier: Quantifier::Lazy(QuantifierType::ZeroOrOne),
+        } => todo!(),
+        ast::Group::NonCapturingWithQuantifier {
+            expression: expr,
+            quantifier: Quantifier::Eager(QuantifierType::ZeroOrMore),
+        } => expression(expr).map(|rel_ops| generate_range_quantifier_block!(eager, 0, rel_ops)),
+        ast::Group::NonCapturingWithQuantifier {
+            expression: expr,
+            quantifier: Quantifier::Lazy(QuantifierType::ZeroOrMore),
+        } => expression(expr).map(|rel_ops| generate_range_quantifier_block!(lazy, 0, rel_ops)),
+        ast::Group::NonCapturingWithQuantifier {
+            expression: expr,
+            quantifier: Quantifier::Eager(QuantifierType::OneOrMore),
+        } => expression(expr).map(|rel_ops| generate_range_quantifier_block!(eager, 1, rel_ops)),
+        ast::Group::NonCapturingWithQuantifier {
+            expression: expr,
+            quantifier: Quantifier::Lazy(QuantifierType::OneOrMore),
+        } => expression(expr).map(|rel_ops| generate_range_quantifier_block!(lazy, 1, rel_ops)),
+
+        ast::Group::NonCapturingWithQuantifier {
+            expression: _expr,
+            quantifier: Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(_lower))),
+        } => todo!(),
+        ast::Group::NonCapturingWithQuantifier {
+            expression: _expr,
+            quantifier: Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(_lower))),
+        } => todo!(),
+        ast::Group::NonCapturingWithQuantifier {
+            expression: _expr,
+            quantifier:
+                Quantifier::Eager(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(_lower),
+                    upper_bound: Integer(_upper),
+                }),
+        } => todo!(),
+        ast::Group::NonCapturingWithQuantifier {
+            expression: _expr,
+            quantifier:
+                Quantifier::Lazy(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(_lower),
+                    upper_bound: Integer(_upper),
+                }),
+        } => todo!(),
+        ast::Group::NonCapturingWithQuantifier {
+            expression: _expr,
+            quantifier: Quantifier::Eager(QuantifierType::MatchExactRange(Integer(_cnt))),
+        } => todo!(),
+        ast::Group::NonCapturingWithQuantifier {
+            expression: _expr,
+            quantifier: Quantifier::Lazy(QuantifierType::MatchExactRange(Integer(_cnt))),
         } => todo!(),
     }
 }
@@ -1536,5 +1590,77 @@ mod tests {
                 .with_opcodes(vec![Opcode::Consume(InstConsume::new('a')), Opcode::Match])),
             compile(regex_ast)
         );
+    }
+
+    #[test]
+    fn should_compile_quantified_non_capturing_group() {
+        let quantifier_and_expected_opcodes = vec![
+            // approximate to `^(?:a)*`
+            (
+                Quantifier::Eager(QuantifierType::ZeroOrMore),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(3))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a)*?`
+            (
+                Quantifier::Lazy(QuantifierType::ZeroOrMore),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a)+`
+            (
+                Quantifier::Eager(QuantifierType::OneOrMore),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(4))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(1))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a)+?`
+            (
+                Quantifier::Lazy(QuantifierType::OneOrMore),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(2))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(1))),
+                    Opcode::Match,
+                ],
+            ),
+        ];
+
+        for (id, (quantifier, expected_opcodes)) in
+            quantifier_and_expected_opcodes.into_iter().enumerate()
+        {
+            let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+                SubExpressionItem::Group(Group::NonCapturing {
+                    expression: Expression(vec![SubExpression(vec![SubExpressionItem::Match(
+                        Match::WithQuantifier {
+                            item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                            quantifier,
+                        },
+                    )])]),
+                }),
+            ])]));
+
+            let res = compile(regex_ast);
+            assert_eq!(
+                (
+                    id,
+                    Ok(Instructions::default().with_opcodes(expected_opcodes))
+                ),
+                (id, res)
+            );
+        }
     }
 }
