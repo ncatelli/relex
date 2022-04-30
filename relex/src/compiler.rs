@@ -1482,170 +1482,6 @@ mod tests {
     }
 
     #[test]
-    fn should_compile_quantified_non_capturing_group() {
-        let quantifier_and_expected_opcodes = vec![
-            // approximate to `^(?:a)?`
-            (
-                Quantifier::Eager(QuantifierType::ZeroOrOne),
-                vec![
-                    Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(2))),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Match,
-                ],
-            ),
-            // approximate to `^(?:a)??`
-            (
-                Quantifier::Lazy(QuantifierType::ZeroOrOne),
-                vec![
-                    Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(1))),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Match,
-                ],
-            ),
-            // approximate to `^(?:a)*`
-            (
-                Quantifier::Eager(QuantifierType::ZeroOrMore),
-                vec![
-                    Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(3))),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
-                    Opcode::Match,
-                ],
-            ),
-            // approximate to `^(?:a)*?`
-            (
-                Quantifier::Lazy(QuantifierType::ZeroOrMore),
-                vec![
-                    Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
-                    Opcode::Match,
-                ],
-            ),
-            // approximate to `^(?:a)+`
-            (
-                Quantifier::Eager(QuantifierType::OneOrMore),
-                vec![
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(4))),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Jmp(InstJmp::new(InstIndex::from(1))),
-                    Opcode::Match,
-                ],
-            ),
-            // approximate to `^(?:a)+?`
-            (
-                Quantifier::Lazy(QuantifierType::OneOrMore),
-                vec![
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(2))),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Jmp(InstJmp::new(InstIndex::from(1))),
-                    Opcode::Match,
-                ],
-            ),
-            // approximate to `^(?:a){2}`
-            (
-                Quantifier::Eager(QuantifierType::MatchExactRange(Integer(2))),
-                vec![
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Match,
-                ],
-            ),
-            // approximate to `^(?:a){2}?`
-            (
-                Quantifier::Lazy(QuantifierType::MatchExactRange(Integer(2))),
-                vec![
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Match,
-                ],
-            ),
-            // approximate to `^(?:a){2,}`
-            (
-                Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(2))),
-                vec![
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(5))),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Jmp(InstJmp::new(InstIndex::from(2))),
-                    Opcode::Match,
-                ],
-            ),
-            // approximate to `^(?:a){2,}?`
-            (
-                Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(2))),
-                vec![
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(3))),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Jmp(InstJmp::new(InstIndex::from(2))),
-                    Opcode::Match,
-                ],
-            ),
-            // approximate to `^(?:a){2,4}`
-            (
-                Quantifier::Eager(QuantifierType::MatchBetweenRange {
-                    lower_bound: Integer(2),
-                    upper_bound: Integer(4),
-                }),
-                vec![
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(4))),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(6))),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Match,
-                ],
-            ),
-            // approximate to `^(?:a){2,4}?`
-            (
-                Quantifier::Lazy(QuantifierType::MatchBetweenRange {
-                    lower_bound: Integer(2),
-                    upper_bound: Integer(4),
-                }),
-                vec![
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(3))),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Split(InstSplit::new(InstIndex::from(6), InstIndex::from(5))),
-                    Opcode::Consume(InstConsume::new('a')),
-                    Opcode::Match,
-                ],
-            ),
-        ];
-
-        for (id, (quantifier, expected_opcodes)) in
-            quantifier_and_expected_opcodes.into_iter().enumerate()
-        {
-            let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
-                SubExpressionItem::Group(Group::NonCapturing {
-                    expression: Expression(vec![SubExpression(vec![SubExpressionItem::Match(
-                        Match::WithQuantifier {
-                            item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
-                            quantifier,
-                        },
-                    )])]),
-                }),
-            ])]));
-
-            let res = compile(regex_ast);
-            assert_eq!(
-                (
-                    id,
-                    Ok(Instructions::default().with_opcodes(expected_opcodes))
-                ),
-                (id, res)
-            );
-        }
-    }
-
-    #[test]
     fn should_compile_quantified_capturing_group() {
         let quantifier_and_expected_opcodes = vec![
             // approximate to `^(a)?`
@@ -1816,6 +1652,170 @@ mod tests {
 
             let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
                 SubExpressionItem::Group(Group::Capturing {
+                    expression: Expression(vec![SubExpression(vec![SubExpressionItem::Match(
+                        Match::WithQuantifier {
+                            item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
+                            quantifier,
+                        },
+                    )])]),
+                }),
+            ])]));
+
+            let res = compile(regex_ast);
+            assert_eq!(
+                (
+                    id,
+                    Ok(Instructions::default().with_opcodes(expected_opcodes))
+                ),
+                (id, res)
+            );
+        }
+    }
+
+    #[test]
+    fn should_compile_quantified_non_capturing_group() {
+        let quantifier_and_expected_opcodes = vec![
+            // approximate to `^(?:a)?`
+            (
+                Quantifier::Eager(QuantifierType::ZeroOrOne),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(2))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a)??`
+            (
+                Quantifier::Lazy(QuantifierType::ZeroOrOne),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(1))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a)*`
+            (
+                Quantifier::Eager(QuantifierType::ZeroOrMore),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(1), InstIndex::from(3))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a)*?`
+            (
+                Quantifier::Lazy(QuantifierType::ZeroOrMore),
+                vec![
+                    Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(1))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(0))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a)+`
+            (
+                Quantifier::Eager(QuantifierType::OneOrMore),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(2), InstIndex::from(4))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(1))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a)+?`
+            (
+                Quantifier::Lazy(QuantifierType::OneOrMore),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(2))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(1))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a){2}`
+            (
+                Quantifier::Eager(QuantifierType::MatchExactRange(Integer(2))),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a){2}?`
+            (
+                Quantifier::Lazy(QuantifierType::MatchExactRange(Integer(2))),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a){2,}`
+            (
+                Quantifier::Eager(QuantifierType::MatchAtLeastRange(Integer(2))),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(5))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(2))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a){2,}?`
+            (
+                Quantifier::Lazy(QuantifierType::MatchAtLeastRange(Integer(2))),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(3))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Jmp(InstJmp::new(InstIndex::from(2))),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a){2,4}`
+            (
+                Quantifier::Eager(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(2),
+                    upper_bound: Integer(4),
+                }),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(3), InstIndex::from(4))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(5), InstIndex::from(6))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Match,
+                ],
+            ),
+            // approximate to `^(?:a){2,4}?`
+            (
+                Quantifier::Lazy(QuantifierType::MatchBetweenRange {
+                    lower_bound: Integer(2),
+                    upper_bound: Integer(4),
+                }),
+                vec![
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(4), InstIndex::from(3))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Split(InstSplit::new(InstIndex::from(6), InstIndex::from(5))),
+                    Opcode::Consume(InstConsume::new('a')),
+                    Opcode::Match,
+                ],
+            ),
+        ];
+
+        for (id, (quantifier, expected_opcodes)) in
+            quantifier_and_expected_opcodes.into_iter().enumerate()
+        {
+            let regex_ast = Regex::StartOfStringAnchored(Expression(vec![SubExpression(vec![
+                SubExpressionItem::Group(Group::NonCapturing {
                     expression: Expression(vec![SubExpression(vec![SubExpressionItem::Match(
                         Match::WithQuantifier {
                             item: MatchItem::MatchCharacter(MatchCharacter(Char('a'))),
