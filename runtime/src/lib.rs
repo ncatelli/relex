@@ -1219,6 +1219,30 @@ mod tests {
     }
 
     #[test]
+    fn should_evaluate_nested_quantified_group_expression() {
+        // ^(a(b){2,})
+        let prog = Instructions::default().with_opcodes(vec![
+            Opcode::StartSave(InstStartSave::new(0)),
+            Opcode::Consume(InstConsume::new('a')),
+            Opcode::StartSave(InstStartSave::new(1)),
+            Opcode::Consume(InstConsume::new('b')),
+            Opcode::Consume(InstConsume::new('b')),
+            Opcode::Split(InstSplit::new(InstIndex::from(6), InstIndex::from(8))),
+            Opcode::Consume(InstConsume::new('b')),
+            Opcode::Jmp(InstJmp::new(InstIndex::from(5))),
+            Opcode::EndSave(InstEndSave::new(1)),
+            Opcode::EndSave(InstEndSave::new(0)),
+            Opcode::Match,
+        ]);
+
+        let res = run::<2>(&prog, "abbb");
+        assert_eq!(
+            Some([SaveGroupSlot::complete(0, 4), SaveGroupSlot::complete(1, 4),]),
+            res
+        );
+    }
+
+    #[test]
     fn should_retain_a_fixed_opcode_size() {
         use core::mem::size_of;
 
