@@ -1,2 +1,2 @@
 [workspace]
-members = ["regex", "runtime"]
+members = ["relex", "regex", "runtime"]
