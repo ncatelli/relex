@@ -1,0 +1,23 @@
+Rules ::= Rule+
+
+Rule ::= Name CaptureType? Pattern "=>" Action
+
+Name ::= Identifier
+
+CaptureType ::= "(" CaptureTypeItem+ ")"
+CaptureTypeItem ::= "String"
+        | IntType
+		| "bool"
+
+IntType ::= IntTypeSign IntTypeBitWidth
+IntTypeSign ::= "i" | "u"
+IntTypeBitWidth ::= "8" | "16" | "32" | "64"
+
+Pattern ::= "[" PatternItem "]"
+PatternItem ::= Char+
+
+Action ::= "{" "}"
+
+Identifier ::= [A-Z] [a-zA-Z_]+
+
+Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
