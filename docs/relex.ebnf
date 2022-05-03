@@ -16,7 +16,8 @@ IntTypeBitWidth ::= "8" | "16" | "32" | "64"
 Pattern ::= "[" PatternItem "]"
 PatternItem ::= Char+
 
-Action ::= "{" "}"
+Action ::= "{" ActionItem "}"
+ActionItem ::= Char+
 
 Identifier ::= [A-Z] [a-zA-Z_]+
 
