@@ -1,5 +1,7 @@
 use std::io::{self, BufRead};
 
+use relex_regex::{compile, parse};
+
 const USAGE: &str = "grep-analog PATTERN [FILE]";
 
 fn main() -> Result<(), String> {
@@ -24,9 +26,9 @@ fn main() -> Result<(), String> {
     }?;
 
     let pattern_input: Vec<(usize, char)> = pattern.chars().enumerate().collect();
-    let program = relex::parse(&pattern_input)
+    let program = parse(&pattern_input)
         .map_err(|e| format!("{:?}", e))
-        .and_then(relex::compile)?;
+        .and_then(compile)?;
 
     if debug {
         println!(
