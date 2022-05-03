@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use relex::*;
+use relex_regex::*;
 
 fn pad_input_to_length_with(prefix: &str, suffix: &str, pad_str: &str, len: usize) -> String {
     let prefix_len = prefix.chars().count();
