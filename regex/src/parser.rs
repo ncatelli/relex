@@ -18,7 +18,6 @@ impl std::fmt::Debug for ParseErr {
     }
 }
 
-#[allow(unused)]
 pub fn parse(input: &[(usize, char)]) -> Result<ast::Regex, ParseErr> {
     regex()
         .parse(input)
