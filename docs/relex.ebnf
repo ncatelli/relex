@@ -1,8 +1,8 @@
 Rules ::= Rule+
 
-Rule ::= Name CaptureType? Pattern "=>" Action
+Rule ::= Identifier CaptureType? Pattern "=>" Action
 
-Name ::= Identifier
+Identifier ::= [A-Z] [a-zA-Z_]+
 
 CaptureType ::= "(" CaptureTypeItem+ ")"
 CaptureTypeItem ::= "String"
@@ -18,7 +18,5 @@ PatternItem ::= Char+
 
 Action ::= "{" ActionItem "}"
 ActionItem ::= Char+
-
-Identifier ::= [A-Z] [a-zA-Z_]+
 
 Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
