@@ -17,8 +17,12 @@ impl std::fmt::Debug for ParseErr {
     }
 }
 
-pub fn parse(_input: &[(usize, char)]) -> Result<ast::Rules, ParseErr> {
-    todo!()
+pub fn parse(input: &[(usize, char)]) -> Result<ast::Rules, ParseErr> {
+    match rules().parse(input) {
+        Ok(MatchStatus::Match { inner, .. }) => Ok(inner),
+        Ok(MatchStatus::NoMatch { .. }) => Err(ParseErr::InvalidRule),
+        Err(e) => Err(ParseErr::Undefined(format!("{:?}", e))),
+    }
 }
 
 fn rules<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Rules> {
