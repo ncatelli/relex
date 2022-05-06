@@ -61,15 +61,27 @@ fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Identif
 }
 
 fn capture_type<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CaptureType> {
-    use parcel::parsers::character;
-    parcel::right(parcel::join(
-        character::expect_character('['),
-        parcel::left(parcel::join(
-            parcel::one_or_more(capture_type_item()),
-            character::expect_character(']'),
-        )),
-    ))
-    .map(ast::CaptureType)
+    use parcel::parsers::character::expect_character;
+
+    expect_character('(')
+        .and_then(|_| {
+            parcel::left(parcel::join(
+                parcel::join(
+                    parcel::zero_or_more(parcel::left(parcel::join(
+                        capture_type_item(),
+                        expect_character(','),
+                    ))),
+                    capture_type_item(),
+                )
+                .map(|(mut head, tail)| {
+                    head.push(tail);
+                    head
+                })
+                .or(|| parcel::zero_or_more(capture_type_item())),
+                expect_character(')'),
+            ))
+        })
+        .map(ast::CaptureType)
 }
 
 fn capture_type_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CaptureTypeItem> {
@@ -129,7 +141,7 @@ fn pattern<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Pattern> {
 }
 
 fn pattern_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::PatternItem> {
-    one_or_more(char()).map(ast::PatternItem)
+    one_or_more(char().predicate(|ast::Char(c)| *c != ']')).map(ast::PatternItem)
 }
 
 fn action<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Action> {
@@ -146,11 +158,28 @@ fn action<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Action> {
 }
 
 fn action_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::ActionItem> {
-    one_or_more(char()).map(ast::ActionItem)
+    one_or_more(char().predicate(|ast::Char(c)| *c != '}')).map(ast::ActionItem)
 }
 
 fn char<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Char> {
     use parcel::parsers::character;
 
     character::any_character().map(ast::Char)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_parse_minimal_expression_with_no_errors() {
+        let inputs = vec!["Test[aabb]=>{1}"]
+            .into_iter()
+            .map(|input| input.chars().enumerate().collect::<Vec<(usize, char)>>());
+
+        for input in inputs {
+            let parse_result = parse(&input);
+            assert!(parse_result.is_ok())
+        }
+    }
 }
