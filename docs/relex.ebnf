@@ -1,6 +1,6 @@
 Rules ::= Rule+
 
-Rule ::= Identifier Capture? Pattern "=>" Action
+Rule ::= "RULE" Identifier Capture? Pattern "=>" Action
 
 Identifier ::= [A-Z] [a-zA-Z_]+
 
@@ -21,6 +21,5 @@ PatternItem ::= Char+
 
 Action ::= "%%{" ActionItem "}%%"
 ActionItem ::= Char+
-
 
 Char ::= #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]

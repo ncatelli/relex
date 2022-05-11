@@ -32,9 +32,8 @@ fn rules<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Rules> {
 fn rule<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Rule> {
     use parcel::parsers::character::expect_str;
 
-    str_wrapped(
-        "RULE",
-        "ENDRULE",
+    parcel::right(parcel::join(
+        non_newline_whitespace_wrapped(expect_str("RULE")),
         parcel::join(
             identifier(),
             parcel::join(
@@ -45,7 +44,7 @@ fn rule<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Rule> {
                 ),
             ),
         ),
-    )
+    ))
     .map(|(identifier, (capture, (pattern, action)))| {
         ast::Rule::new(identifier, capture, pattern, action)
     })
@@ -240,6 +239,22 @@ where
     ))
 }
 
+fn non_newline_whitespace_wrapped<'a, P, B>(parser: P) -> impl Parser<'a, &'a [(usize, char)], B>
+where
+    B: 'a,
+    P: Parser<'a, &'a [(usize, char)], B> + 'a,
+{
+    use parcel::parsers::character::non_newline_whitespace;
+
+    parcel::right(parcel::join(
+        parcel::zero_or_more(non_newline_whitespace()),
+        parcel::left(parcel::join(
+            parser,
+            parcel::zero_or_more(non_newline_whitespace()),
+        )),
+    ))
+}
+
 fn str_wrapped<'a, P, B>(
     prefix: &'static str,
     suffix: &'static str,
@@ -324,10 +339,9 @@ mod tests {
     #[test]
     fn should_parse_rule() {
         let inputs = vec![
-            "RULE Zero [0] => %%{ if digit==\"0\" { Some(0) } }%% ENDRULE",
-            "RULE Zero(digit: u8) [0] => %%{ if digit==\"0\" { Some(0) } }%% ENDRULE",
-            "RULE Zero(digit: u8, other: String) [0] => %%{ if digit==\"0\" { Some(0) } }%% ENDRULE"
-
+            "RULE Zero [0] => %%{ if digit==\"0\" { Some(0) } }%%",
+            "RULE Zero(digit: u8) [0] => %%{ if digit==\"0\" { Some(0) } }%%",
+            "RULE Zero(digit: u8, other: String) [0] => %%{ if digit==\"0\" { Some(0) } }%%",
         ]
         .into_iter()
         .map(|input| input.chars().enumerate().collect::<Vec<(usize, char)>>());
