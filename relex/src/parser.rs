@@ -1,4 +1,4 @@
-use parcel::{one_or_more, parsers::character::expect_character, prelude::v1::*};
+use parcel::{parsers::character::expect_character, prelude::v1::*};
 
 use super::ast;
 
@@ -148,11 +148,40 @@ fn int_type_bit_width<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast:
 }
 
 fn pattern<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Pattern> {
-    str_wrapped("[", "] ", pattern_item()).map(ast::Pattern)
+    str_wrapped("[", "]", pattern_item()).map(ast::Pattern)
 }
 
-fn pattern_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::PatternItem> {
-    one_or_more(char().predicate(|ast::Char(c)| *c != ']')).map(ast::PatternItem)
+pub fn pattern_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::PatternItem> {
+    move |input: &'a [(usize, char)]| {
+        let start = 0;
+
+        for end in 1..=input.len() {
+            let sub = input.get(start..end);
+
+            match sub {
+                Some([.., (_, ']'), (_, ' ')])
+                | Some([.., (_, ']'), (_, '\t')])
+                | Some([.., (_, ']'), (_, '\n')])
+                | Some([.., (_, ']'), (_, '=')]) => {
+                    return Ok(MatchStatus::Match {
+                        span: start..end - 2,
+                        remainder: &input[end - 2..],
+                        inner: ast::PatternItem(
+                            (&input[start..end - 2])
+                                .iter()
+                                .map(|(_, c)| c)
+                                .copied()
+                                .map(ast::Char)
+                                .collect(),
+                        ),
+                    })
+                }
+                _ => continue,
+            }
+        }
+
+        Ok(MatchStatus::NoMatch(input))
+    }
 }
 
 fn action<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Action> {
@@ -191,6 +220,7 @@ pub fn action_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Ac
     }
 }
 
+#[allow(unused)]
 fn char<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Char> {
     use parcel::parsers::character;
 

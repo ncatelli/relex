@@ -16,7 +16,7 @@ IntType ::= IntTypeSign IntTypeBitWidth
 IntTypeSign ::= "i" | "u"
 IntTypeBitWidth ::= "8" | "16" | "32" | "64"
 
-Pattern ::= "[" PatternItem "] "
+Pattern ::= "[" PatternItem "]"
 PatternItem ::= Char+
 
 Action ::= "%%{" ActionItem "}%%"
