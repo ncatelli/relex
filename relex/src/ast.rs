@@ -6,7 +6,7 @@ pub struct Rules(pub Vec<Rule>);
 #[derive(Debug, PartialEq)]
 pub struct Rule {
     identifier: Identifier,
-    capture_type: Option<CaptureType>,
+    capture: Option<Capture>,
     pattern: Pattern,
     action: Action,
 }
@@ -14,13 +14,13 @@ pub struct Rule {
 impl Rule {
     pub fn new(
         identifier: Identifier,
-        capture_type: Option<CaptureType>,
+        capture: Option<Capture>,
         pattern: Pattern,
         action: Action,
     ) -> Self {
         Self {
             identifier,
-            capture_type,
+            capture,
             pattern,
             action,
         }
@@ -34,7 +34,7 @@ impl Identifier {
     pub fn try_new(id: String) -> Option<Self> {
         let is_valid = id.chars().all(|c| c.is_alphabetic() || c == '_');
         if is_valid {
-            Some(Identifier(id))
+            Some(Self(id))
         } else {
             None
         }
@@ -42,13 +42,39 @@ impl Identifier {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct CaptureType(pub Vec<CaptureTypeItem>);
+pub struct Capture(pub Vec<CaptureItem>);
 
 #[derive(Debug, PartialEq)]
-pub enum CaptureTypeItem {
+pub struct CaptureItem {
+    pub identifier: CaptureIdentifier,
+    pub ty: CaptureType,
+}
+
+impl CaptureItem {
+    pub fn new(identifier: CaptureIdentifier, ty: CaptureType) -> Self {
+        Self { identifier, ty }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum CaptureType {
     String,
     Bool,
     Int(IntType),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct CaptureIdentifier(pub String);
+
+impl CaptureIdentifier {
+    pub fn try_new(id: String) -> Option<Self> {
+        let is_valid = id.chars().all(|c| c.is_alphabetic() || c == '_');
+        if is_valid {
+            Some(Self(id))
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
