@@ -339,9 +339,9 @@ mod tests {
     #[test]
     fn should_parse_rule() {
         let inputs = vec![
-            "RULE Zero [0] => %%{ if digit==\"0\" { Some(0) } }%%",
-            "RULE Zero(digit: u8) [0] => %%{ if digit==\"0\" { Some(0) } }%%",
-            "RULE Zero(digit: u8, other: String) [0] => %%{ if digit==\"0\" { Some(0) } }%%",
+            "RULE Zero [0] => %%{ Some(0) }%%",
+            "RULE Zero(digit: u8) [(0)] => %%{ if digit==\"0\" { Some(0) } }%%",
+            "RULE Zero(digit: u8, other: String) [(0)(.*)] => %%{ if digit==\"0\" { Some(0) } }%%",
         ]
         .into_iter()
         .map(|input| input.chars().enumerate().collect::<Vec<(usize, char)>>());
