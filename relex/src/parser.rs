@@ -354,4 +354,26 @@ mod tests {
             ))
         }
     }
+
+    #[test]
+    fn should_parse_multiple_rules() {
+        let inputs = vec![
+            "RULE Zero [0] => %%{ Some(0) }%%\n
+RULE Zero(digit: u8) [(0)] => %%{ if digit==\"0\" { Some(0) } }%%\n
+RULE Zero(digit: u8, other: String) [(0)(.*)] => %%{ if digit==\"0\" { Some(0) } }%%",
+        ]
+        .into_iter()
+        .map(|input| input.chars().enumerate().collect::<Vec<(usize, char)>>());
+
+        for input in inputs {
+            let parse_result = rules().parse(&input);
+            assert!(match parse_result {
+                Ok(parcel::MatchStatus::Match {
+                    inner: ast::Rules(rules),
+                    ..
+                }) => rules.len() == 3,
+                _ => false,
+            })
+        }
+    }
 }
