@@ -17,6 +17,29 @@ impl std::fmt::Debug for ParseErr {
     }
 }
 
+/// Attempts to parse a set of relex rule DSL into it's corresponding AST.
+///
+/// # Example
+///
+/// ```
+/// use parcel;
+/// use parcel::prelude::v1::*;
+/// use relex::parser;
+/// use relex::ast;
+///
+/// let input = "RULE Zero [0] => %%{ Some(0) }%%\n
+/// RULE Zero(digit: u8) [(0)] => %%{ if digit==\"0\" { Some(0) } }%%\n
+/// RULE Zero(digit: u8, other: String) [(0)(.*)] => %%{ if digit==\"0\" { Some(0) } }%%"
+///     .chars()
+///     .enumerate()
+///     .collect::<Vec<(usize, char)>>();
+///
+/// let parse_result = parser::parse(&input);
+/// assert!(match parse_result {
+///     Ok(ast::Rules(rules)) => rules.len() == 3,
+///     _ => false,
+/// })
+/// ```
 pub fn parse(input: &[(usize, char)]) -> Result<ast::Rules, ParseErr> {
     match rules().parse(input) {
         Ok(MatchStatus::Match { inner, .. }) => Ok(inner),
