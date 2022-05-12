@@ -22,7 +22,6 @@ impl std::fmt::Debug for ParseErr {
 /// # Example
 ///
 /// ```
-/// use parcel;
 /// use parcel::prelude::v1::*;
 /// use relex::parser;
 /// use relex::ast;
