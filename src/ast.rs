@@ -3,12 +3,18 @@ use std::fmt::Write;
 #[derive(Debug, PartialEq)]
 pub struct Rules(pub Vec<Rule>);
 
+impl AsRef<[Rule]> for Rules {
+    fn as_ref(&self) -> &[Rule] {
+        self.0.as_ref()
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Rule {
-    identifier: Identifier,
-    capture: Option<Capture>,
-    pattern: Pattern,
-    action: Action,
+    pub identifier: Identifier,
+    pub capture: Option<Capture>,
+    pub pattern: Pattern,
+    pub action: Action,
 }
 
 impl Rule {
