@@ -180,6 +180,12 @@ impl Char {
     }
 }
 
+impl From<char> for Char {
+    fn from(src: char) -> Self {
+        Char(src)
+    }
+}
+
 impl From<Char> for char {
     fn from(src: Char) -> Self {
         src.as_char()

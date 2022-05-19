@@ -105,10 +105,24 @@ pub fn codegen(rules: ast::Rules) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::*;
+
+    #[test]
+    fn should_codgen_valid_input() {
+        let pattern = Pattern(PatternItem("ab".chars().map(Char::from).collect()));
+        let action = Action(ActionItem("Some(())".chars().map(Char::from).collect()));
+        let rules = Rules(vec![Rule::new(
+            Identifier("Test".to_string()),
+            None,
+            pattern,
+            action,
+        )]);
+
+        assert!(codegen(rules).is_ok())
+    }
 
     #[test]
     fn should_generate_tokens_without_error() {
-        use crate::ast::*;
         let int8_ct = CaptureType::Int(IntType {
             sign: IntTypeSign::Signed,
             width: IntTypeBitWidth::Eight,
