@@ -82,8 +82,24 @@ impl<'a> ToRust for TokenVariant<'a> {
     }
 }
 
-pub fn codegen(_rules: ast::Rules) -> Result<String, String> {
-    todo!()
+pub fn codegen(rules: ast::Rules) -> Result<String, String> {
+    let variants: Vec<TokenVariant<'_>> = rules
+        .as_ref()
+        .iter()
+        .map(|rule| {
+            let captures = rule
+                .capture
+                .as_ref()
+                .map_or_else(Vec::new, |caps| caps.0.iter().map(|ci| &ci.ty).collect());
+
+            (rule.identifier.as_ref(), captures)
+        })
+        .map(|(id, captures)| TokenVariant { id, captures })
+        .collect();
+
+    Token(variants)
+        .to_rust_code()
+        .map_err(|_| "unable to generate token enum".to_string())
 }
 
 #[cfg(test)]

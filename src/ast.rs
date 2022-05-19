@@ -47,6 +47,12 @@ impl Identifier {
     }
 }
 
+impl AsRef<str> for Identifier {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Capture(pub Vec<CaptureItem>);
 
