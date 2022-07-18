@@ -6,7 +6,7 @@ Identifier ::= [A-Z] [a-zA-Z_]+
 
 Capture ::= "(" (CaptureItem ",")* CaptureItem ")"
 CaptureItem ::= CaptureIdentifier ":" CaptureType
-CaptureType::= Char+
+CaptureType::= [a-zA-Z_] [a-zA-Z0-9_]+
 
 CaptureIdentifier ::= [a-zA-Z_]+
 

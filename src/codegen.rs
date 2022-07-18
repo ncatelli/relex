@@ -12,26 +12,7 @@ impl ToRust for CaptureType {
     type Error = ();
 
     fn to_rust_code(&self) -> Result<String, Self::Error> {
-        use ast::{IntTypeBitWidth, IntTypeSign};
-
-        let repr = match self {
-            CaptureType::String => "String".to_string(),
-            CaptureType::Bool => "bool".to_string(),
-            CaptureType::Int(it) => {
-                let signedness = match it.sign {
-                    IntTypeSign::Signed => "i",
-                    IntTypeSign::Unsigned => "u",
-                };
-                let width = match it.width {
-                    IntTypeBitWidth::Eight => "8",
-                    IntTypeBitWidth::Sixteen => "16",
-                    IntTypeBitWidth::ThirtyTwo => "32",
-                    IntTypeBitWidth::SixtyFour => "64",
-                };
-
-                format!("{}{}", signedness, width)
-            }
-        };
+        let repr = self.0.clone();
 
         Ok(repr)
     }
@@ -123,16 +104,10 @@ mod tests {
 
     #[test]
     fn should_generate_tokens_without_error() {
-        let int8_ct = CaptureType::Int(IntType {
-            sign: IntTypeSign::Signed,
-            width: IntTypeBitWidth::Eight,
-        });
-        let uint64_ct = CaptureType::Int(IntType {
-            sign: IntTypeSign::Unsigned,
-            width: IntTypeBitWidth::SixtyFour,
-        });
-        let str_ct = CaptureType::String;
-        let bool_ct = CaptureType::Bool;
+        let int8_ct = CaptureType::try_new("i8").unwrap();
+        let uint64_ct = CaptureType::try_new("u64").unwrap();
+        let str_ct = CaptureType::try_new("String").unwrap();
+        let bool_ct = CaptureType::try_new("bool").unwrap();
 
         let inputs = vec![
             Token(vec![TokenVariant {

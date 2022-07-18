@@ -69,10 +69,20 @@ impl CaptureItem {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum CaptureType {
-    String,
-    Bool,
-    Int(IntType),
+pub struct CaptureType(pub String);
+
+impl CaptureType {
+    pub fn try_new<S: ToString>(id: S) -> Option<Self> {
+        let id_str = id.to_string();
+        let is_valid = id_str
+            .chars()
+            .all(|c| c.is_alphabetic() || c.is_digit(10) || c == '_');
+        if is_valid {
+            Some(Self(id_str))
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -87,32 +97,6 @@ impl CaptureIdentifier {
             None
         }
     }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct IntType {
-    pub sign: IntTypeSign,
-    pub width: IntTypeBitWidth,
-}
-
-impl IntType {
-    pub fn new(sign: IntTypeSign, width: IntTypeBitWidth) -> Self {
-        Self { sign, width }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum IntTypeSign {
-    Signed,
-    Unsigned,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum IntTypeBitWidth {
-    Eight,
-    Sixteen,
-    ThirtyTwo,
-    SixtyFour,
 }
 
 #[derive(Debug, PartialEq)]

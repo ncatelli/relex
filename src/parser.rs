@@ -119,14 +119,11 @@ fn capture_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Captu
 fn capture_type<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CaptureType> {
     use parcel::parsers::character;
 
-    parcel::or(
-        character::expect_str("String").map(|_| ast::CaptureType::String),
-        || {
-            parcel::or(int_type().map(ast::CaptureType::Int), || {
-                character::expect_str("bool").map(|_| ast::CaptureType::Bool)
-            })
-        },
-    )
+    parcel::zero_or_more(parcel::or(character::alphabetic(), || {
+        parcel::or(character::digit(10), || character::expect_character('_'))
+    }))
+    .map(|chars| chars.into_iter().collect())
+    .map(ast::CaptureType)
 }
 
 fn capture_identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CaptureIdentifier>
@@ -138,34 +135,6 @@ fn capture_identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast:
     }))
     .map(|chars| chars.into_iter().collect())
     .map(ast::CaptureIdentifier)
-}
-
-fn int_type<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::IntType> {
-    parcel::join(int_type_sign(), int_type_bit_width())
-        .map(|(sign, width)| ast::IntType::new(sign, width))
-}
-
-fn int_type_sign<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::IntTypeSign> {
-    parcel::or(
-        expect_character('i').map(|_| ast::IntTypeSign::Signed),
-        || expect_character('u').map(|_| ast::IntTypeSign::Unsigned),
-    )
-}
-
-fn int_type_bit_width<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::IntTypeBitWidth> {
-    use parcel::parsers::character::expect_str;
-
-    parcel::or(expect_str("8").map(|_| ast::IntTypeBitWidth::Eight), || {
-        parcel::or(
-            expect_str("16").map(|_| ast::IntTypeBitWidth::Sixteen),
-            || {
-                parcel::or(
-                    expect_str("32").map(|_| ast::IntTypeBitWidth::ThirtyTwo),
-                    || expect_str("64").map(|_| ast::IntTypeBitWidth::SixtyFour),
-                )
-            },
-        )
-    })
 }
 
 fn pattern<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Pattern> {
