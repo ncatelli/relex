@@ -43,6 +43,8 @@ impl<'a> ToRust for Token<'a> {
 struct TokenVariant<'a> {
     id: &'a str,
     captures: Vec<&'a CaptureType>,
+    #[allow(unused)]
+    pattern: Vec<u8>,
 }
 
 impl<'a> ToRust for TokenVariant<'a> {
@@ -64,19 +66,36 @@ impl<'a> ToRust for TokenVariant<'a> {
 }
 
 pub fn codegen(rules: ast::Rules) -> Result<String, String> {
-    let variants: Vec<TokenVariant<'_>> = rules
-        .as_ref()
-        .iter()
-        .map(|rule| {
-            let captures = rule
-                .capture
-                .as_ref()
-                .map_or_else(Vec::new, |caps| caps.0.iter().map(|ci| &ci.ty).collect());
+    let rules = rules.as_ref();
 
-            (rule.identifier.as_ref(), captures)
+    let id_captures = rules.iter().map(|rule| {
+        let captures = rule
+            .capture
+            .as_ref()
+            .map_or_else(Vec::new, |caps| caps.0.iter().map(|ci| &ci.ty).collect());
+
+        (rule.identifier.as_ref(), captures)
+    });
+
+    let patterns = rules.iter().map(|rule| {
+        use regex_compiler::bytecode::ToBytecode;
+
+        regex_compiler::parse(rule.pattern.0.to_string())
+            .map_err(|e| format!("{:?}", e))
+            .and_then(regex_compiler::compile)
+            .map(|inst| inst.to_bytecode())
+    });
+
+    let variants = id_captures
+        .zip(patterns)
+        .map(|((id, captures), program)| {
+            program.map(|program| TokenVariant {
+                id,
+                captures,
+                pattern: program,
+            })
         })
-        .map(|(id, captures)| TokenVariant { id, captures })
-        .collect();
+        .collect::<Result<Vec<TokenVariant<'_>>, String>>()?;
 
     Token(variants)
         .to_rust_code()
@@ -113,14 +132,17 @@ mod tests {
             Token(vec![TokenVariant {
                 id: "Test",
                 captures: vec![],
+                pattern: vec![],
             }]),
             Token(vec![TokenVariant {
                 id: "Test",
                 captures: vec![&int8_ct],
+                pattern: vec![],
             }]),
             Token(vec![TokenVariant {
                 id: "Test",
                 captures: vec![&int8_ct, &bool_ct, &str_ct, &uint64_ct],
+                pattern: vec![],
             }]),
         ];
 
