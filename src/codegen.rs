@@ -65,8 +65,9 @@ impl<'a> ToRust for TokenVariant<'a> {
     }
 }
 
-pub fn codegen(rules: ast::Rules) -> Result<String, String> {
-    let rules = rules.as_ref();
+pub fn codegen(rule_set: ast::RuleSet) -> Result<String, String> {
+    let header = rule_set.header.as_ref().map(|h| h.as_ref()).unwrap_or("");
+    let rules = rule_set.rules.as_ref();
 
     let id_captures = rules.iter().map(|rule| {
         let captures = rule
@@ -99,6 +100,8 @@ pub fn codegen(rules: ast::Rules) -> Result<String, String> {
 
     Token(variants)
         .to_rust_code()
+        // merge the header and variants
+        .map(|variants| vec![header.to_string(), variants].join("\n"))
         .map_err(|_| "unable to generate token enum".to_string())
 }
 
@@ -118,7 +121,9 @@ mod tests {
             action,
         )]);
 
-        assert!(codegen(rules).is_ok())
+        let rule_set = RuleSet::new(None, rules);
+
+        assert!(codegen(rule_set).is_ok())
     }
 
     #[test]
