@@ -35,15 +35,53 @@ impl std::fmt::Debug for ParseErr {
 ///
 /// let parse_result = parser::parse(&input);
 /// assert!(match parse_result {
-///     Ok(ast::Rules(rules)) => rules.len() == 3,
+///     Ok(ast::RuleSet{header: None, rules}) => rules.as_ref().len() == 3,
 ///     _ => false,
 /// })
 /// ```
-pub fn parse(input: &[(usize, char)]) -> Result<ast::Rules, ParseErr> {
-    match rules().parse(input) {
+pub fn parse(input: &[(usize, char)]) -> Result<ast::RuleSet, ParseErr> {
+    match ruleset().parse(input) {
         Ok(MatchStatus::Match { inner, .. }) => Ok(inner),
         Ok(MatchStatus::NoMatch { .. }) => Err(ParseErr::InvalidRule),
         Err(e) => Err(ParseErr::Undefined(format!("{:?}", e))),
+    }
+}
+
+fn ruleset<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::RuleSet> {
+    parcel::join(parcel::optional(header()), rules())
+        .map(|(header, rules)| ast::RuleSet::new(header, rules))
+}
+
+fn header<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Header> {
+    str_wrapped("{{{", "}}}", header_item()).map(ast::Header::new)
+}
+
+pub fn header_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
+    move |input: &'a [(usize, char)]| {
+        let start = 0;
+
+        for end in 1..=input.len() {
+            let sub = input.get(start..end);
+
+            match sub {
+                Some([.., (_, '}'), (_, '}'), (_, '}')]) => {
+                    return Ok(MatchStatus::Match {
+                        span: start..end - 3,
+                        remainder: &input[end - 3..],
+                        inner: (&input[start..end - 3])
+                            .iter()
+                            .map(|(_, c)| c)
+                            .copied()
+                            .collect(),
+                    })
+                }
+                // provide an early return in case it falls through to another block
+                Some([.., (_, '%'), (_, '%'), (_, '{')]) => return Ok(MatchStatus::NoMatch(input)),
+                _ => continue,
+            }
+        }
+
+        Ok(MatchStatus::NoMatch(input))
     }
 }
 

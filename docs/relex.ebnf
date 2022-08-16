@@ -1,3 +1,7 @@
+Header ::= "{{{" .* "}}}"
+
+RuleSet ::= Header Rules
+
 Rules ::= Rule+
 
 Rule ::= "RULE" Identifier Capture? Pattern "=>" Action

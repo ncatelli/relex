@@ -1,6 +1,39 @@
 use std::fmt::Write;
 
 #[derive(Debug, PartialEq)]
+pub struct RuleSet {
+    pub header: Option<Header>,
+    pub rules: Rules,
+}
+
+impl RuleSet {
+    pub fn new(header: Option<Header>, rules: Rules) -> Self {
+        Self { header, rules }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Header(pub String);
+
+impl Header {
+    pub fn new(data: String) -> Self {
+        Self(data)
+    }
+}
+
+impl AsRef<str> for Header {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl ToString for Header {
+    fn to_string(&self) -> String {
+        self.0.clone()
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub struct Rules(pub Vec<Rule>);
 
 impl AsRef<[Rule]> for Rules {
