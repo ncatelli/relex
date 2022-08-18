@@ -10,14 +10,24 @@ impl RuleSet {
     pub fn new(header: Option<Header>, rules: Rules) -> Self {
         Self { header, rules }
     }
+
+    pub fn with_rules(mut self, rules: Rules) -> Self {
+        self.rules = rules;
+        self
+    }
+
+    pub fn with_header(mut self, header: Header) -> Self {
+        self.header = Some(header);
+        self
+    }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Header(pub String);
 
 impl Header {
-    pub fn new(data: String) -> Self {
-        Self(data)
+    pub fn new<S: ToString>(data: S) -> Self {
+        Self(data.to_string())
     }
 }
 

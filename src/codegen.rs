@@ -43,8 +43,6 @@ impl<'a> ToRust for Token<'a> {
 struct TokenVariant<'a> {
     id: &'a str,
     captures: Vec<&'a CaptureType>,
-    #[allow(unused)]
-    pattern: Vec<u8>,
 }
 
 impl<'a> ToRust for TokenVariant<'a> {
@@ -78,25 +76,23 @@ pub fn codegen(rule_set: ast::RuleSet) -> Result<String, String> {
         (rule.identifier.as_ref(), captures)
     });
 
-    let patterns = rules.iter().map(|rule| {
-        use regex_compiler::bytecode::ToBytecode;
+    let patterns = rules
+        .iter()
+        .map(|rule| {
+            use regex_compiler::bytecode::ToBytecode;
 
-        regex_compiler::parse(rule.pattern.0.to_string())
-            .map_err(|e| format!("{:?}", e))
-            .and_then(regex_compiler::compile)
-            .map(|inst| inst.to_bytecode())
-    });
+            regex_compiler::parse(rule.pattern.0.to_string())
+                .map_err(|e| format!("{:?}", e))
+                .and_then(regex_compiler::compile)
+                .map(|inst| inst.to_bytecode())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let _pattern_action = patterns.iter().zip(rules.iter().map(|rule| &rule.action));
 
     let variants = id_captures
-        .zip(patterns)
-        .map(|((id, captures), program)| {
-            program.map(|program| TokenVariant {
-                id,
-                captures,
-                pattern: program,
-            })
-        })
-        .collect::<Result<Vec<TokenVariant<'_>>, String>>()?;
+        .map(|(id, captures)| TokenVariant { id, captures })
+        .collect::<Vec<TokenVariant<'_>>>();
 
     Token(variants)
         .to_rust_code()
@@ -113,7 +109,9 @@ mod tests {
     #[test]
     fn should_codgen_valid_input() {
         let pattern = Pattern(PatternItem("ab".chars().map(Char::from).collect()));
-        let action = Action(ActionItem("Some(())".chars().map(Char::from).collect()));
+        let action = Action(ActionItem(
+            "Some(Token::Test)".chars().map(Char::from).collect(),
+        ));
         let rules = Rules(vec![Rule::new(
             Identifier("Test".to_string()),
             None,
@@ -123,7 +121,39 @@ mod tests {
 
         let rule_set = RuleSet::new(None, rules);
 
-        assert!(codegen(rule_set).is_ok())
+        let expected = "
+#[derive(Debug, Clone, PartialEq)]
+pub enum Token {
+Test,
+}";
+
+        assert_eq!(Ok(expected.to_string()), codegen(rule_set))
+    }
+
+    #[test]
+    fn should_codgen_valid_input_with_header() {
+        let pattern = Pattern(PatternItem("ab".chars().map(Char::from).collect()));
+        let action = Action(ActionItem(
+            "Some(Token::Test)".chars().map(Char::from).collect(),
+        ));
+        let rules = Rules(vec![Rule::new(
+            Identifier("Test".to_string()),
+            None,
+            pattern,
+            action,
+        )]);
+
+        let header = "const UNIT: () = ();";
+
+        let rule_set = RuleSet::new(None, rules).with_header(Header::new(header));
+
+        let expected = "const UNIT: () = ();
+#[derive(Debug, Clone, PartialEq)]
+pub enum Token {
+Test,
+}";
+
+        assert_eq!(Ok(expected.to_string()), codegen(rule_set))
     }
 
     #[test]
@@ -134,25 +164,31 @@ mod tests {
         let bool_ct = CaptureType::try_new("bool").unwrap();
 
         let inputs = vec![
-            Token(vec![TokenVariant {
-                id: "Test",
-                captures: vec![],
-                pattern: vec![],
-            }]),
-            Token(vec![TokenVariant {
-                id: "Test",
-                captures: vec![&int8_ct],
-                pattern: vec![],
-            }]),
-            Token(vec![TokenVariant {
-                id: "Test",
-                captures: vec![&int8_ct, &bool_ct, &str_ct, &uint64_ct],
-                pattern: vec![],
-            }]),
+            (
+                Token(vec![TokenVariant {
+                    id: "Test",
+                    captures: vec![],
+                }]),
+                "#[derive(Debug, Clone, PartialEq)]\npub enum Token {\nTest,\n}".to_string(),
+            ),
+            (
+                Token(vec![TokenVariant {
+                    id: "Test",
+                    captures: vec![&int8_ct],
+                }]),
+                "#[derive(Debug, Clone, PartialEq)]\npub enum Token {\nTest(i8),\n}".to_string(),
+            ),
+            (
+                Token(vec![TokenVariant {
+                    id: "Test",
+                    captures: vec![&int8_ct, &bool_ct, &str_ct, &uint64_ct],
+                }]),
+                "#[derive(Debug, Clone, PartialEq)]\npub enum Token {\nTest(i8, bool, String, u64),\n}".to_string(),
+            ),
         ];
 
-        for (test, input) in inputs.into_iter().enumerate() {
-            assert_eq!((test, true), (test, input.to_rust_code().is_ok()));
+        for (test_id, (input, expected)) in inputs.into_iter().enumerate() {
+            assert_eq!((test_id, Ok(expected)), (test_id, input.to_rust_code()));
         }
     }
 }
