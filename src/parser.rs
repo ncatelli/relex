@@ -28,7 +28,7 @@ impl std::fmt::Debug for ParseErr {
 ///
 /// let input = "RULE Zero [0] => %%{ Some(0) }%%\n
 /// RULE Zero(digit: u8) [(0)] => %%{ if digit==\"0\" { Some(0) } }%%\n
-/// RULE Zero(digit: u8, other: String) [(0)(.*)] => %%{ if digit==\"0\" { Some(0) } }%%"
+/// RULE Zero(other: String) [(0)(.*)] => %%{ if other.chars().len()==0 { Some(0) } }%%"
 ///     .chars()
 ///     .enumerate()
 ///     .collect::<Vec<(usize, char)>>();
@@ -124,23 +124,7 @@ fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Identif
 }
 
 fn capture<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Capture> {
-    str_wrapped(
-        "(",
-        ")",
-        parcel::join(
-            parcel::zero_or_more(parcel::left(parcel::join(
-                capture_item(),
-                whitespace_wrapped(expect_character(',')),
-            ))),
-            capture_item(),
-        )
-        .map(|(mut head, tail)| {
-            head.push(tail);
-            head
-        })
-        .or(|| parcel::zero_or_more(capture_item())),
-    )
-    .map(ast::Capture)
+    str_wrapped("(", ")", capture_item()).map(ast::Capture)
 }
 
 fn capture_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CaptureItem> {
@@ -322,7 +306,7 @@ mod tests {
 
     #[test]
     fn should_parse_capture() {
-        let inputs = vec!["(first: u8)", "(first: String, second: u8)"]
+        let inputs = vec!["(first: u8)", "(first: String)"]
             .into_iter()
             .map(|input| input.chars().enumerate().collect::<Vec<(usize, char)>>());
 
@@ -370,7 +354,7 @@ mod tests {
         let inputs = vec![
             "RULE Zero [0] => %%{ Some(0) }%%",
             "RULE Zero(digit: u8) [(0)] => %%{ if digit==\"0\" { Some(0) } }%%",
-            "RULE Zero(digit: u8, other: String) [(0)(.*)] => %%{ if digit==\"0\" { Some(0) } }%%",
+            "RULE Zero(other: String) [(0)(.*)] => %%{ if other.chars().len()==0 { Some(0) } }%%",
         ]
         .into_iter()
         .map(|input| input.chars().enumerate().collect::<Vec<(usize, char)>>());
@@ -389,7 +373,7 @@ mod tests {
         let inputs = vec![
             "RULE Zero [0] => %%{ Some(0) }%%\n
 RULE Zero(digit: u8) [(0)] => %%{ if digit==\"0\" { Some(0) } }%%\n
-RULE Zero(digit: u8, other: String) [(0)(.*)] => %%{ if digit==\"0\" { Some(0) } }%%",
+RULE Zero(other: String) [(0)(.*)] => %%{ if other.chars().len == 0 { Some(0) } }%%",
         ]
         .into_iter()
         .map(|input| input.chars().enumerate().collect::<Vec<(usize, char)>>());

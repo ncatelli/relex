@@ -97,7 +97,7 @@ impl AsRef<str> for Identifier {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Capture(pub Vec<CaptureItem>);
+pub struct Capture(pub CaptureItem);
 
 #[derive(Debug, PartialEq)]
 pub struct CaptureItem {
