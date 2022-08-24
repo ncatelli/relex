@@ -42,7 +42,32 @@ impl<'a> ToRust for Token<'a> {
     }
 }
 
+struct PatterMatcher<'a> {
+    program_binary: &'a [u8],
+}
+
+impl<'a> PatterMatcher<'a> {
+    fn new(program_binary: &'a [u8]) -> Self {
+        Self { program_binary }
+    }
+}
+
+impl<'a> ToRust for PatterMatcher<'a> {
+    type Error = ();
+
+    fn to_rust_code(&self) -> Result<String, Self::Error> {
+        let bin_len = self.program_binary.len();
+
+        Ok(format!(
+            "const PROG_BINARY: [u8; {}] = {:?};",
+            bin_len, self.program_binary
+        ))
+    }
+}
+
 struct TokenVariant<'a> {
+    /// Represents id of the variant. This aligns with the expression id of
+    /// the regex matcher program.
     id: &'a str,
     capture_ty: Option<&'a CaptureType>,
 }
@@ -80,9 +105,13 @@ pub fn codegen(rule_set: ast::RuleSet) -> Result<String, String> {
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let _pattern_binary = compile_many(patterns).map(|insts| insts.to_bytecode())?;
-
+    let pattern_binary = compile_many(patterns).map(|insts| insts.to_bytecode())?;
     let _pattern_action = rules.iter().map(|rule| &rule.action);
+    let pattern_matcher = PatterMatcher::new(&pattern_binary);
+
+    let pattern_matcher_str_repr = pattern_matcher
+        .to_rust_code()
+        .map_err(|_| "unabled to serialize pattern binary")?;
 
     let variants = id_captures
         .map(|(id, captures)| TokenVariant {
@@ -91,11 +120,16 @@ pub fn codegen(rule_set: ast::RuleSet) -> Result<String, String> {
         })
         .collect::<Vec<TokenVariant<'_>>>();
 
-    Token(variants)
+    let variants_str_repr = Token(variants)
         .to_rust_code()
-        // merge the header and variants
-        .map(|variants| vec![header.to_string(), variants].join("\n"))
-        .map_err(|_| "unable to generate token enum".to_string())
+        .map_err(|_| "unable to generate token enum".to_string())?;
+
+    Ok(vec![
+        header.to_string(),
+        pattern_matcher_str_repr,
+        variants_str_repr,
+    ]
+    .join("\n"))
 }
 
 #[cfg(test)]
@@ -119,6 +153,7 @@ mod tests {
         let rule_set = RuleSet::new(None, rules);
 
         let expected = "
+const PROG_BINARY: [u8; 144] = [240, 240, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 97, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 98, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
 Test,
@@ -145,12 +180,23 @@ Test,
         let rule_set = RuleSet::new(None, rules).with_header(Header::new(header));
 
         let expected = "const UNIT: () = ();
+const PROG_BINARY: [u8; 144] = [240, 240, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 97, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 98, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
 Test,
 }";
 
-        assert_eq!(Ok(expected.to_string()), codegen(rule_set))
+        let result = codegen(rule_set);
+        let contains_str = result.as_ref().map(|res| res.contains(&expected));
+        let expected: Result<String, ()> = Ok(expected.to_string());
+
+        assert_eq!(
+            Ok(true),
+            contains_str,
+            "  left: `{:?}`\n right: `{:?}`",
+            expected,
+            result
+        );
     }
 
     #[test]
