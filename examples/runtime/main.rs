@@ -29,7 +29,7 @@ pub enum Token {
 
 fn main() -> Result<(), String> {
     let program = Instructions::from_bytecode(TEST_BIN).map_err(|e| e.to_string())?;
-    let input = "1+2;";
+    let input = "1+25;";
     let mut curr_input = &input[0..];
 
     loop {
@@ -42,16 +42,20 @@ fn main() -> Result<(), String> {
                     end,
                 }],
             ) => {
-                match expression_id {
-                    0 => print!("Token::Number "),
-                    1 => print!("Token::Plus "),
-                    2 => print!("Token::SemiColon "),
-                    _ => return Err("no match".to_string()),
-                };
+                let matching_value = &curr_input[start..end];
 
-                print!("{} ", &curr_input[start..end]);
+                let token = match expression_id {
+                    0 => matching_value
+                        .parse::<i32>()
+                        .map_err(|e| e.to_string())
+                        .map(Token::Number),
+                    1 => Ok(Token::Plus),
+                    2 => Ok(Token::Semicolon),
+                    _ => Err("no match".to_string()),
+                }?;
+
                 curr_input = &curr_input[end..];
-                println!("[remaining: {:?}]", &curr_input);
+                println!("{:?} [remaining: {:?}]", &token, &curr_input);
             }
 
             None => return Ok(()),
