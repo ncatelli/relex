@@ -26,7 +26,7 @@ impl<'a> ToRust for Token<'a> {
     type Error = ();
 
     fn to_rust_code(&self) -> Result<String, Self::Error> {
-        let prefix = "#[derive(Debug, Clone, PartialEq)]\npub enum Token {\n".to_string();
+        let prefix = "#[derive(Debug, PartialEq)]\npub enum Token {\n".to_string();
         let suffix = "}".to_string();
 
         let variants = self
