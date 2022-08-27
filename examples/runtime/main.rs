@@ -117,7 +117,8 @@ impl<'a> Iterator for TokenStream<'a> {
                 };
 
                 curr_input = &curr_input[end..];
-                consumed = end.saturating_sub(start);
+                // the next match should always start at 0, so the end value marks consumed chars.
+                consumed = end;
 
                 let adjusted_start = self.offset + start;
                 let adjusted_end = self.offset + end;
