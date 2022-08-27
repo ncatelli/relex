@@ -17,7 +17,7 @@ const TEST_BIN: [u8; 416] = [
     0, 0, 20, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Token {
     // "^([0-9]+)"
     Number(i32),
