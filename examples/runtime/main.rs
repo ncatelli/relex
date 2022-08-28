@@ -91,11 +91,9 @@ impl<'a> Iterator for TokenStream<'a> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut curr_input = self.input_stream;
-        let mut consumed = self.offset;
-        let res = regex_runtime::run::<1>(&self.program, curr_input);
+        let res = regex_runtime::run::<1>(&self.program, self.input_stream);
 
-        let res = match res {
+        let (tok, next_input, next_offset) = match res {
             Some(
                 [SaveGroupSlot::Complete {
                     expression_id,
@@ -103,7 +101,7 @@ impl<'a> Iterator for TokenStream<'a> {
                     end,
                 }],
             ) => {
-                let matching_value = &curr_input[start..end];
+                let matching_value = self.input_stream.get(start..end)?;
 
                 let variant = match expression_id {
                     0 => matching_value
@@ -116,23 +114,25 @@ impl<'a> Iterator for TokenStream<'a> {
                     _ => None,
                 };
 
-                curr_input = &curr_input[end..];
+                let next_input = self.input_stream.get(end..)?;
                 // the next match should always start at 0, so the end value marks consumed chars.
-                consumed = end;
+                let consumed = end;
 
                 let adjusted_start = self.offset + start;
                 let adjusted_end = self.offset + end;
 
-                variant.map(|tv| Token::new(Span::from(adjusted_start..adjusted_end), tv))
+                variant
+                    .map(|tv| Token::new(Span::from(adjusted_start..adjusted_end), tv))
+                    .map(|tok| (tok, next_input, consumed))
             }
 
             _ => None,
-        };
+        }?;
 
         // advance the stream
-        self.input_stream = curr_input;
-        self.offset += consumed;
-        res
+        self.input_stream = next_input;
+        self.offset += next_offset;
+        Some(tok)
     }
 }
 

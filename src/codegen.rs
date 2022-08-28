@@ -4,6 +4,69 @@ use crate::ast::CaptureType;
 
 use super::ast;
 
+#[allow(unused)]
+const LEXER_TYPE_DEFS: &str = "
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Span {
+    start: usize,
+    end: usize,
+}
+
+impl From<Span> for std::ops::Range<usize> {
+    fn from(span: Span) -> Self {
+        let start = span.start;
+        let end = span.end;
+
+        start..end
+    }
+}
+
+impl From<std::ops::Range<usize>> for Span {
+    fn from(range: std::ops::Range<usize>) -> Self {
+        Self {
+            start: range.start,
+            end: range.end,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Token {
+    span: Span,
+    variant: TokenVariant,
+}
+
+impl Token {
+    pub fn new(span: Span, variant: TokenVariant) -> Self {
+        Self { span, variant }
+    }
+
+    pub fn as_span(&self) -> Span {
+        self.span
+    }
+
+    pub fn to_variant(self) -> TokenVariant {
+        self.variant
+    }
+}
+
+pub struct TokenStream<'a> {
+    input_stream: &'a str,
+    program: Instructions,
+    offset: usize,
+}
+
+impl<'a> TokenStream<'a> {
+    pub fn new(program: Instructions, input_stream: &'a str) -> Self {
+        Self {
+            input_stream,
+            program,
+            offset: 0,
+        }
+    }
+}
+";
+
 trait ToRust {
     type Error;
 
@@ -20,9 +83,9 @@ impl ToRust for CaptureType {
     }
 }
 
-struct Token<'a>(Vec<TokenVariant<'a>>);
+struct IrToken<'a>(Vec<IrTokenVariant<'a>>);
 
-impl<'a> ToRust for Token<'a> {
+impl<'a> ToRust for IrToken<'a> {
     type Error = ();
 
     fn to_rust_code(&self) -> Result<String, Self::Error> {
@@ -65,14 +128,14 @@ impl<'a> ToRust for PatterMatcher<'a> {
     }
 }
 
-struct TokenVariant<'a> {
+struct IrTokenVariant<'a> {
     /// Represents id of the variant. This aligns with the expression id of
     /// the regex matcher program.
     id: &'a str,
     capture_ty: Option<&'a CaptureType>,
 }
 
-impl<'a> ToRust for TokenVariant<'a> {
+impl<'a> ToRust for IrTokenVariant<'a> {
     type Error = ();
 
     fn to_rust_code(&self) -> Result<String, Self::Error> {
@@ -88,7 +151,7 @@ impl<'a> ToRust for TokenVariant<'a> {
     }
 }
 
-pub fn codegen(rule_set: ast::RuleSet) -> Result<String, String> {
+pub fn codegen(rule_set: &ast::RuleSet) -> Result<String, String> {
     let header = rule_set.header.as_ref().map(|h| h.as_ref()).unwrap_or("");
     let rules = rule_set.rules.as_ref();
 
@@ -114,18 +177,19 @@ pub fn codegen(rule_set: ast::RuleSet) -> Result<String, String> {
         .map_err(|_| "unabled to serialize pattern binary")?;
 
     let variants = id_captures
-        .map(|(id, captures)| TokenVariant {
+        .map(|(id, captures)| IrTokenVariant {
             id,
             capture_ty: captures,
         })
-        .collect::<Vec<TokenVariant<'_>>>();
+        .collect::<Vec<IrTokenVariant<'_>>>();
 
-    let variants_str_repr = Token(variants)
+    let variants_str_repr = IrToken(variants)
         .to_rust_code()
         .map_err(|_| "unable to generate token enum".to_string())?;
 
     Ok(vec![
         header.to_string(),
+        LEXER_TYPE_DEFS.to_string(),
         pattern_matcher_str_repr,
         variants_str_repr,
     ]
@@ -152,14 +216,21 @@ mod tests {
 
         let rule_set = RuleSet::new(None, rules);
 
-        let expected = "
-const PROG_BINARY: [u8; 144] = [240, 240, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 97, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 98, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-#[derive(Debug, PartialEq)]
+        let expected = ["
+const PROG_BINARY: [u8; 144] = [240, 240, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 97, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 98, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];",
+"#[derive(Debug, PartialEq)]
 pub enum Token {
 Test,
-}";
+}"];
 
-        assert_eq!(Ok(expected.to_string()), codegen(rule_set))
+        let generated_res = codegen(&rule_set);
+        for expected_substr in expected {
+            let contains = (&generated_res)
+                .as_ref()
+                .map(|str| str.contains(expected_substr))
+                .unwrap_or(false);
+            assert!(contains);
+        }
     }
 
     #[test]
@@ -179,24 +250,21 @@ Test,
 
         let rule_set = RuleSet::new(None, rules).with_header(Header::new(header));
 
-        let expected = "const UNIT: () = ();
-const PROG_BINARY: [u8; 144] = [240, 240, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 97, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 98, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-#[derive(Debug, PartialEq)]
+        let expected_substrs = ["const UNIT: () = ();",
+"const PROG_BINARY: [u8; 144] = [240, 240, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 97, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 98, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];",
+"#[derive(Debug, PartialEq)]
 pub enum Token {
 Test,
-}";
+}"];
 
-        let result = codegen(rule_set);
-        let contains_str = result.as_ref().map(|res| res.contains(&expected));
-        let expected: Result<String, ()> = Ok(expected.to_string());
-
-        assert_eq!(
-            Ok(true),
-            contains_str,
-            "  left: `{:?}`\n right: `{:?}`",
-            expected,
-            result
-        );
+        let generated_res = codegen(&rule_set);
+        for expected_substr in expected_substrs {
+            let contains = (&generated_res)
+                .as_ref()
+                .map(|str| str.contains(expected_substr))
+                .unwrap_or(false);
+            assert!(contains);
+        }
     }
 
     #[test]
@@ -205,14 +273,14 @@ Test,
 
         let inputs = vec![
             (
-                Token(vec![TokenVariant {
+                IrToken(vec![IrTokenVariant {
                     id: "Test",
                     capture_ty: None,
                 }]),
                 "#[derive(Debug, PartialEq)]\npub enum Token {\nTest,\n}".to_string(),
             ),
             (
-                Token(vec![TokenVariant {
+                IrToken(vec![IrTokenVariant {
                     id: "Test",
                     capture_ty: Some(&int8_ct),
                 }]),
