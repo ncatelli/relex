@@ -67,6 +67,47 @@ impl<'a> TokenStream<'a> {
 }
 ";
 
+const TOKEN_STREAM_HEAD: &str = "impl<'a> Iterator for TokenStream<'a> {
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let res = regex_runtime::run::<1>(&self.program, self.input_stream);
+
+        let (tok, next_input, next_offset) = match res {
+            Some(
+                [SaveGroupSlot::Complete {
+                    expression_id,
+                    start,
+                    end,
+                }],
+            ) => {
+                let val = self.input_stream.get(start..end)?;
+";
+
+const TOKEN_STREAM_TAIL: &str = "
+                let next_input = self.input_stream.get(end..)?;
+                // the next match should always start at 0, so the end value marks consumed chars.
+                let consumed = end;
+
+                let adjusted_start = self.offset + start;
+                let adjusted_end = self.offset + end;
+
+                variant
+                    .map(|tv| Token::new(Span::from(adjusted_start..adjusted_end), tv))
+                    .map(|tok| (tok, next_input, consumed))
+            }
+
+            _ => None,
+        }?;
+
+        // advance the stream
+        self.input_stream = next_input;
+        self.offset += next_offset;
+        Some(tok)
+    }
+}
+";
+
 trait ToRust {
     type Error;
 
@@ -105,17 +146,17 @@ impl<'a> ToRust for IrToken<'a> {
     }
 }
 
-struct PatterMatcher<'a> {
+struct PatternBin<'a> {
     program_binary: &'a [u8],
 }
 
-impl<'a> PatterMatcher<'a> {
+impl<'a> PatternBin<'a> {
     fn new(program_binary: &'a [u8]) -> Self {
         Self { program_binary }
     }
 }
 
-impl<'a> ToRust for PatterMatcher<'a> {
+impl<'a> ToRust for PatternBin<'a> {
     type Error = ();
 
     fn to_rust_code(&self) -> Result<String, Self::Error> {
@@ -125,6 +166,61 @@ impl<'a> ToRust for PatterMatcher<'a> {
             "const PROG_BINARY: [u8; {}] = {:?};",
             bin_len, self.program_binary
         ))
+    }
+}
+
+struct ActionVariantDispatcher<'a> {
+    expr_idx: usize,
+    action: &'a ast::Action,
+}
+
+impl<'a> ActionVariantDispatcher<'a> {
+    fn new(expr_idx: usize, action: &'a ast::Action) -> Self {
+        Self { expr_idx, action }
+    }
+}
+
+impl<'a> ToRust for ActionVariantDispatcher<'a> {
+    type Error = ();
+
+    fn to_rust_code(&self) -> Result<String, Self::Error> {
+        Ok(format!("{} => {{{}}},\n", self.expr_idx, self.action.0))
+    }
+}
+
+struct ActionDispatcher<'a> {
+    actions: &'a [&'a ast::Action],
+}
+
+impl<'a> ActionDispatcher<'a> {
+    fn new(actions: &'a [&'a ast::Action]) -> Self {
+        Self { actions }
+    }
+
+    const HEADER: &'static str = "let variant = match expression_id {";
+    const TAIL: &'static str = "};";
+}
+
+impl<'a> ToRust for ActionDispatcher<'a> {
+    type Error = ();
+
+    fn to_rust_code(&self) -> Result<String, Self::Error> {
+        let action_variant_repr = self
+            .actions
+            .iter()
+            .enumerate()
+            .map(|(expr_idx, action)| ActionVariantDispatcher::new(expr_idx, action))
+            .map(|avd| ToRust::to_rust_code(&avd))
+            .collect::<Result<_, ()>>();
+
+        let action_variants = action_variant_repr?;
+
+        Ok([
+            Self::HEADER.to_string(),
+            action_variants,
+            Self::TAIL.to_string(),
+        ]
+        .join("\n"))
     }
 }
 
@@ -166,11 +262,8 @@ pub fn codegen(rule_set: &ast::RuleSet) -> Result<String, String> {
         .map(|rule| regex_compiler::parse(rule.pattern.0.to_string()).map_err(|e| e.to_string()))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let pattern_binary = compile_many(patterns).map(|insts| insts.to_bytecode())?;
-    let _pattern_action = rules.iter().map(|rule| &rule.action);
-    let pattern_matcher = PatterMatcher::new(&pattern_binary);
-
-    let pattern_matcher_str_repr = pattern_matcher
+    let compiled_bin = compile_many(patterns).map(|insts| insts.to_bytecode())?;
+    let pattern_bin = PatternBin::new(&compiled_bin)
         .to_rust_code()
         .map_err(|_| "unabled to serialize pattern binary")?;
 
@@ -185,11 +278,22 @@ pub fn codegen(rule_set: &ast::RuleSet) -> Result<String, String> {
         .to_rust_code()
         .map_err(|_| "unable to generate token enum".to_string())?;
 
+    let actions = rules.iter().map(|rule| &rule.action).collect::<Vec<_>>();
+    let dispatcher = ActionDispatcher::new(actions.as_slice())
+        .to_rust_code()
+        .map_err(|_| "unable to generate variant dispatcher".to_string())?;
+
+    let token_stream_iterator = format!(
+        "{}\nlet variant = {};\n{}",
+        TOKEN_STREAM_HEAD, dispatcher, TOKEN_STREAM_TAIL
+    );
+
     Ok(vec![
         header.to_string(),
         LEXER_TYPE_DEFS.to_string(),
-        pattern_matcher_str_repr,
+        pattern_bin,
         variants_str_repr,
+        token_stream_iterator,
     ]
     .join("\n"))
 }

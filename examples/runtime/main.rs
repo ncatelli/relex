@@ -101,10 +101,10 @@ impl<'a> Iterator for TokenStream<'a> {
                     end,
                 }],
             ) => {
-                let matching_value = self.input_stream.get(start..end)?;
+                let val = self.input_stream.get(start..end)?;
 
                 let variant = match expression_id {
-                    0 => matching_value
+                    0 => val
                         .parse::<i32>()
                         .map_err(|e| e.to_string())
                         .map(TokenVariant::Number)
