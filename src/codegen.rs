@@ -163,9 +163,7 @@ pub fn codegen(rule_set: &ast::RuleSet) -> Result<String, String> {
 
     let patterns = rules
         .iter()
-        .map(|rule| {
-            regex_compiler::parse(rule.pattern.0.to_string()).map_err(|e| format!("{:?}", e))
-        })
+        .map(|rule| regex_compiler::parse(rule.pattern.0.to_string()).map_err(|e| e.to_string()))
         .collect::<Result<Vec<_>, _>>()?;
 
     let pattern_binary = compile_many(patterns).map(|insts| insts.to_bytecode())?;
