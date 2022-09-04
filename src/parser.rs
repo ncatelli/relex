@@ -2,17 +2,47 @@ use parcel::{parsers::character::expect_character, prelude::v1::*};
 
 use super::ast;
 
-#[derive(PartialEq)]
-pub enum ParseErr {
+#[derive(Debug, PartialEq, Eq)]
+pub enum ParseErrKind {
     InvalidRule,
-    Undefined(String),
+    Other,
 }
 
-impl std::fmt::Debug for ParseErr {
+impl std::fmt::Display for ParseErrKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Undefined(err) => write!(f, "undefined parse error: {}", err),
+            Self::Other => write!(f, "undefined parse error"),
             Self::InvalidRule => write!(f, "provided rule is invalid",),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParseErr {
+    kind: ParseErrKind,
+    data: Option<String>,
+}
+
+impl ParseErr {
+    pub fn new(kind: ParseErrKind) -> Self {
+        Self { kind, data: None }
+    }
+
+    pub fn with_data_mut(&mut self, data: String) {
+        self.data = Some(data)
+    }
+
+    pub fn with_data(mut self, data: String) -> Self {
+        self.with_data_mut(data);
+        self
+    }
+}
+
+impl std::fmt::Display for ParseErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.data {
+            Some(ctx) => write!(f, "{}: {}", &self.kind, ctx),
+            None => write!(f, "{}", &self.kind),
         }
     }
 }
@@ -42,8 +72,8 @@ impl std::fmt::Debug for ParseErr {
 pub fn parse(input: &[(usize, char)]) -> Result<ast::RuleSet, ParseErr> {
     match ruleset().parse(input) {
         Ok(MatchStatus::Match { inner, .. }) => Ok(inner),
-        Ok(MatchStatus::NoMatch { .. }) => Err(ParseErr::InvalidRule),
-        Err(e) => Err(ParseErr::Undefined(format!("{:?}", e))),
+        Ok(MatchStatus::NoMatch { .. }) => Err(ParseErr::new(ParseErrKind::InvalidRule)),
+        Err(e) => Err(ParseErr::new(ParseErrKind::Other).with_data(e)),
     }
 }
 

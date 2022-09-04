@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct RuleSet {
     pub header: Option<Header>,
     pub rules: Rules,
@@ -22,7 +22,7 @@ impl RuleSet {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Header(pub String);
 
 impl Header {
@@ -43,7 +43,7 @@ impl ToString for Header {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Rules(pub Vec<Rule>);
 
 impl AsRef<[Rule]> for Rules {
@@ -52,7 +52,7 @@ impl AsRef<[Rule]> for Rules {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Rule {
     pub identifier: Identifier,
     pub capture: Option<Capture>,
@@ -76,7 +76,7 @@ impl Rule {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Identifier(pub String);
 
 impl Identifier {
@@ -96,10 +96,10 @@ impl AsRef<str> for Identifier {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Capture(pub CaptureItem);
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CaptureItem {
     pub identifier: CaptureIdentifier,
     pub ty: CaptureType,
@@ -111,7 +111,7 @@ impl CaptureItem {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CaptureType(pub String);
 
 impl CaptureType {
@@ -119,7 +119,7 @@ impl CaptureType {
         let id_str = id.to_string();
         let is_valid = id_str
             .chars()
-            .all(|c| c.is_alphabetic() || c.is_digit(10) || c == '_');
+            .all(|c| c.is_alphabetic() || c.is_ascii_digit() || c == '_');
         if is_valid {
             Some(Self(id_str))
         } else {
@@ -128,7 +128,7 @@ impl CaptureType {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CaptureIdentifier(pub String);
 
 impl CaptureIdentifier {
@@ -142,7 +142,7 @@ impl CaptureIdentifier {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Pattern(pub PatternItem);
 
 impl From<Pattern> for String {
@@ -151,7 +151,7 @@ impl From<Pattern> for String {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct PatternItem(pub Vec<Char>);
 
 impl From<PatternItem> for String {
@@ -170,7 +170,7 @@ impl std::fmt::Display for PatternItem {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Action(pub ActionItem);
 
 impl From<Action> for String {
@@ -179,7 +179,7 @@ impl From<Action> for String {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ActionItem(pub Vec<Char>);
 
 impl From<ActionItem> for String {
@@ -198,7 +198,7 @@ impl std::fmt::Display for ActionItem {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Char(pub char);
 
 impl Char {

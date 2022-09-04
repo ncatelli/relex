@@ -41,7 +41,7 @@ impl From<std::ops::Range<usize>> for Span {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Token {
     span: Span,
     variant: TokenVariant,
@@ -61,7 +61,7 @@ impl Token {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TokenVariant {
     // "^([0-9]+)"
     Number(i32),
