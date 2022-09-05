@@ -2,17 +2,47 @@ use parcel::{parsers::character::expect_character, prelude::v1::*};
 
 use super::ast;
 
-#[derive(PartialEq)]
-pub enum ParseErr {
+#[derive(Debug, PartialEq, Eq)]
+pub enum ParseErrKind {
     InvalidRule,
-    Undefined(String),
+    Other,
 }
 
-impl std::fmt::Debug for ParseErr {
+impl std::fmt::Display for ParseErrKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Undefined(err) => write!(f, "undefined parse error: {}", err),
+            Self::Other => write!(f, "undefined parse error"),
             Self::InvalidRule => write!(f, "provided rule is invalid",),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ParseErr {
+    kind: ParseErrKind,
+    data: Option<String>,
+}
+
+impl ParseErr {
+    pub fn new(kind: ParseErrKind) -> Self {
+        Self { kind, data: None }
+    }
+
+    pub fn with_data_mut(&mut self, data: String) {
+        self.data = Some(data)
+    }
+
+    pub fn with_data(mut self, data: String) -> Self {
+        self.with_data_mut(data);
+        self
+    }
+}
+
+impl std::fmt::Display for ParseErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.data {
+            Some(ctx) => write!(f, "{}: {}", &self.kind, ctx),
+            None => write!(f, "{}", &self.kind),
         }
     }
 }
@@ -28,22 +58,60 @@ impl std::fmt::Debug for ParseErr {
 ///
 /// let input = "RULE Zero [0] => %%{ Some(0) }%%\n
 /// RULE Zero(digit: u8) [(0)] => %%{ if digit==\"0\" { Some(0) } }%%\n
-/// RULE Zero(digit: u8, other: String) [(0)(.*)] => %%{ if digit==\"0\" { Some(0) } }%%"
+/// RULE Zero(other: String) [(0)(.*)] => %%{ if other.chars().len()==0 { Some(0) } }%%"
 ///     .chars()
 ///     .enumerate()
 ///     .collect::<Vec<(usize, char)>>();
 ///
 /// let parse_result = parser::parse(&input);
 /// assert!(match parse_result {
-///     Ok(ast::Rules(rules)) => rules.len() == 3,
+///     Ok(ast::RuleSet{header: None, rules}) => rules.as_ref().len() == 3,
 ///     _ => false,
 /// })
 /// ```
-pub fn parse(input: &[(usize, char)]) -> Result<ast::Rules, ParseErr> {
-    match rules().parse(input) {
+pub fn parse(input: &[(usize, char)]) -> Result<ast::RuleSet, ParseErr> {
+    match ruleset().parse(input) {
         Ok(MatchStatus::Match { inner, .. }) => Ok(inner),
-        Ok(MatchStatus::NoMatch { .. }) => Err(ParseErr::InvalidRule),
-        Err(e) => Err(ParseErr::Undefined(format!("{:?}", e))),
+        Ok(MatchStatus::NoMatch { .. }) => Err(ParseErr::new(ParseErrKind::InvalidRule)),
+        Err(e) => Err(ParseErr::new(ParseErrKind::Other).with_data(e)),
+    }
+}
+
+fn ruleset<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::RuleSet> {
+    parcel::join(parcel::optional(header()), rules())
+        .map(|(header, rules)| ast::RuleSet::new(header, rules))
+}
+
+fn header<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Header> {
+    str_wrapped("{{{", "}}}", header_item()).map(ast::Header::new)
+}
+
+pub fn header_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
+    move |input: &'a [(usize, char)]| {
+        let start = 0;
+
+        for end in 1..=input.len() {
+            let sub = input.get(start..end);
+
+            match sub {
+                Some([.., (_, '}'), (_, '}'), (_, '}')]) => {
+                    return Ok(MatchStatus::Match {
+                        span: start..end - 3,
+                        remainder: &input[end - 3..],
+                        inner: (&input[start..end - 3])
+                            .iter()
+                            .map(|(_, c)| c)
+                            .copied()
+                            .collect(),
+                    })
+                }
+                // provide an early return in case it falls through to another block
+                Some([.., (_, '%'), (_, '%'), (_, '{')]) => return Ok(MatchStatus::NoMatch(input)),
+                _ => continue,
+            }
+        }
+
+        Ok(MatchStatus::NoMatch(input))
     }
 }
 
@@ -86,23 +154,7 @@ fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Identif
 }
 
 fn capture<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Capture> {
-    str_wrapped(
-        "(",
-        ")",
-        parcel::join(
-            parcel::zero_or_more(parcel::left(parcel::join(
-                capture_item(),
-                whitespace_wrapped(expect_character(',')),
-            ))),
-            capture_item(),
-        )
-        .map(|(mut head, tail)| {
-            head.push(tail);
-            head
-        })
-        .or(|| parcel::zero_or_more(capture_item())),
-    )
-    .map(ast::Capture)
+    str_wrapped("(", ")", capture_item()).map(ast::Capture)
 }
 
 fn capture_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CaptureItem> {
@@ -119,14 +171,11 @@ fn capture_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Captu
 fn capture_type<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CaptureType> {
     use parcel::parsers::character;
 
-    parcel::or(
-        character::expect_str("String").map(|_| ast::CaptureType::String),
-        || {
-            parcel::or(int_type().map(ast::CaptureType::Int), || {
-                character::expect_str("bool").map(|_| ast::CaptureType::Bool)
-            })
-        },
-    )
+    parcel::zero_or_more(parcel::or(character::alphabetic(), || {
+        parcel::or(character::digit(10), || character::expect_character('_'))
+    }))
+    .map(|chars| chars.into_iter().collect())
+    .map(ast::CaptureType)
 }
 
 fn capture_identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::CaptureIdentifier>
@@ -138,34 +187,6 @@ fn capture_identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast:
     }))
     .map(|chars| chars.into_iter().collect())
     .map(ast::CaptureIdentifier)
-}
-
-fn int_type<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::IntType> {
-    parcel::join(int_type_sign(), int_type_bit_width())
-        .map(|(sign, width)| ast::IntType::new(sign, width))
-}
-
-fn int_type_sign<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::IntTypeSign> {
-    parcel::or(
-        expect_character('i').map(|_| ast::IntTypeSign::Signed),
-        || expect_character('u').map(|_| ast::IntTypeSign::Unsigned),
-    )
-}
-
-fn int_type_bit_width<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::IntTypeBitWidth> {
-    use parcel::parsers::character::expect_str;
-
-    parcel::or(expect_str("8").map(|_| ast::IntTypeBitWidth::Eight), || {
-        parcel::or(
-            expect_str("16").map(|_| ast::IntTypeBitWidth::Sixteen),
-            || {
-                parcel::or(
-                    expect_str("32").map(|_| ast::IntTypeBitWidth::ThirtyTwo),
-                    || expect_str("64").map(|_| ast::IntTypeBitWidth::SixtyFour),
-                )
-            },
-        )
-    })
 }
 
 fn pattern<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Pattern> {
@@ -315,7 +336,7 @@ mod tests {
 
     #[test]
     fn should_parse_capture() {
-        let inputs = vec!["(first: u8)", "(first: String, second: u8)"]
+        let inputs = vec!["(first: u8)", "(first: String)"]
             .into_iter()
             .map(|input| input.chars().enumerate().collect::<Vec<(usize, char)>>());
 
@@ -363,7 +384,7 @@ mod tests {
         let inputs = vec![
             "RULE Zero [0] => %%{ Some(0) }%%",
             "RULE Zero(digit: u8) [(0)] => %%{ if digit==\"0\" { Some(0) } }%%",
-            "RULE Zero(digit: u8, other: String) [(0)(.*)] => %%{ if digit==\"0\" { Some(0) } }%%",
+            "RULE Zero(other: String) [(0)(.*)] => %%{ if other.chars().len()==0 { Some(0) } }%%",
         ]
         .into_iter()
         .map(|input| input.chars().enumerate().collect::<Vec<(usize, char)>>());
@@ -382,7 +403,7 @@ mod tests {
         let inputs = vec![
             "RULE Zero [0] => %%{ Some(0) }%%\n
 RULE Zero(digit: u8) [(0)] => %%{ if digit==\"0\" { Some(0) } }%%\n
-RULE Zero(digit: u8, other: String) [(0)(.*)] => %%{ if digit==\"0\" { Some(0) } }%%",
+RULE Zero(other: String) [(0)(.*)] => %%{ if other.chars().len == 0 { Some(0) } }%%",
         ]
         .into_iter()
         .map(|input| input.chars().enumerate().collect::<Vec<(usize, char)>>());

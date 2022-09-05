@@ -1,14 +1,63 @@
 use std::fmt::Write;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
+pub struct RuleSet {
+    pub header: Option<Header>,
+    pub rules: Rules,
+}
+
+impl RuleSet {
+    pub fn new(header: Option<Header>, rules: Rules) -> Self {
+        Self { header, rules }
+    }
+
+    pub fn with_rules(mut self, rules: Rules) -> Self {
+        self.rules = rules;
+        self
+    }
+
+    pub fn with_header(mut self, header: Header) -> Self {
+        self.header = Some(header);
+        self
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Header(pub String);
+
+impl Header {
+    pub fn new<S: ToString>(data: S) -> Self {
+        Self(data.to_string())
+    }
+}
+
+impl AsRef<str> for Header {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl ToString for Header {
+    fn to_string(&self) -> String {
+        self.0.clone()
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct Rules(pub Vec<Rule>);
 
-#[derive(Debug, PartialEq)]
+impl AsRef<[Rule]> for Rules {
+    fn as_ref(&self) -> &[Rule] {
+        self.0.as_ref()
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct Rule {
-    identifier: Identifier,
-    capture: Option<Capture>,
-    pattern: Pattern,
-    action: Action,
+    pub identifier: Identifier,
+    pub capture: Option<Capture>,
+    pub pattern: Pattern,
+    pub action: Action,
 }
 
 impl Rule {
@@ -27,7 +76,7 @@ impl Rule {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Identifier(pub String);
 
 impl Identifier {
@@ -41,10 +90,16 @@ impl Identifier {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Capture(pub Vec<CaptureItem>);
+impl AsRef<str> for Identifier {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
+pub struct Capture(pub CaptureItem);
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct CaptureItem {
     pub identifier: CaptureIdentifier,
     pub ty: CaptureType,
@@ -56,14 +111,24 @@ impl CaptureItem {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum CaptureType {
-    String,
-    Bool,
-    Int(IntType),
+#[derive(Debug, PartialEq, Eq)]
+pub struct CaptureType(pub String);
+
+impl CaptureType {
+    pub fn try_new<S: ToString>(id: S) -> Option<Self> {
+        let id_str = id.to_string();
+        let is_valid = id_str
+            .chars()
+            .all(|c| c.is_alphabetic() || c.is_ascii_digit() || c == '_');
+        if is_valid {
+            Some(Self(id_str))
+        } else {
+            None
+        }
+    }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CaptureIdentifier(pub String);
 
 impl CaptureIdentifier {
@@ -77,33 +142,7 @@ impl CaptureIdentifier {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct IntType {
-    pub sign: IntTypeSign,
-    pub width: IntTypeBitWidth,
-}
-
-impl IntType {
-    pub fn new(sign: IntTypeSign, width: IntTypeBitWidth) -> Self {
-        Self { sign, width }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum IntTypeSign {
-    Signed,
-    Unsigned,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum IntTypeBitWidth {
-    Eight,
-    Sixteen,
-    ThirtyTwo,
-    SixtyFour,
-}
-
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Pattern(pub PatternItem);
 
 impl From<Pattern> for String {
@@ -112,7 +151,7 @@ impl From<Pattern> for String {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct PatternItem(pub Vec<Char>);
 
 impl From<PatternItem> for String {
@@ -131,7 +170,7 @@ impl std::fmt::Display for PatternItem {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Action(pub ActionItem);
 
 impl From<Action> for String {
@@ -140,7 +179,7 @@ impl From<Action> for String {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ActionItem(pub Vec<Char>);
 
 impl From<ActionItem> for String {
@@ -159,12 +198,18 @@ impl std::fmt::Display for ActionItem {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Char(pub char);
 
 impl Char {
     pub fn as_char(&self) -> char {
         self.0
+    }
+}
+
+impl From<char> for Char {
+    fn from(src: char) -> Self {
+        Char(src)
     }
 }
 
