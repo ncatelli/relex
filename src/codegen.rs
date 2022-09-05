@@ -284,7 +284,7 @@ pub fn codegen(rule_set: &ast::RuleSet) -> Result<String, String> {
         .map_err(|_| "unable to generate variant dispatcher".to_string())?;
 
     let token_stream_iterator = format!(
-        "{}\nlet variant = {};\n{}",
+        "{}\nlet variant = {}\n{}",
         TOKEN_STREAM_HEAD, dispatcher, TOKEN_STREAM_TAIL
     );
 
