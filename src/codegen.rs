@@ -6,6 +6,8 @@ use super::ast;
 
 #[allow(unused)]
 const LEXER_TYPE_DEFS: &str = "
+use regex_runtime::{Instructions, SaveGroupSlot};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     start: usize,
@@ -30,7 +32,7 @@ impl From<std::ops::Range<usize>> for Span {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Token {
     span: Span,
     variant: TokenVariant,
@@ -130,7 +132,7 @@ impl<'a> ToRust for IrToken<'a> {
     type Error = ();
 
     fn to_rust_code(&self) -> Result<String, Self::Error> {
-        let prefix = "#[derive(Debug, PartialEq)]\npub enum Token {\n".to_string();
+        let prefix = "#[derive(Debug, PartialEq, Eq)]\npub enum TokenVariant {\n".to_string();
         let suffix = "}".to_string();
 
         let variants = self
@@ -198,7 +200,7 @@ impl<'a> ActionDispatcher<'a> {
     }
 
     const HEADER: &'static str = "let variant = match expression_id {";
-    const TAIL: &'static str = "};";
+    const TAIL: &'static str = "_ => unreachable!(),\n};";
 }
 
 impl<'a> ToRust for ActionDispatcher<'a> {
@@ -220,7 +222,7 @@ impl<'a> ToRust for ActionDispatcher<'a> {
             action_variants,
             Self::TAIL.to_string(),
         ]
-        .join("\n"))
+        .join("\n\n"))
     }
 }
 
@@ -284,7 +286,7 @@ pub fn codegen(rule_set: &ast::RuleSet) -> Result<String, String> {
         .map_err(|_| "unable to generate variant dispatcher".to_string())?;
 
     let token_stream_iterator = format!(
-        "{}\nlet variant = {}\n{}",
+        "{}\n{}\n{}",
         TOKEN_STREAM_HEAD, dispatcher, TOKEN_STREAM_TAIL
     );
 
@@ -307,7 +309,7 @@ mod tests {
     fn should_codgen_valid_input() {
         let pattern = Pattern(PatternItem("ab".chars().map(Char::from).collect()));
         let action = Action(ActionItem(
-            "Some(Token::Test)".chars().map(Char::from).collect(),
+            "Some(TokenVariant::Test)".chars().map(Char::from).collect(),
         ));
         let rules = Rules(vec![Rule::new(
             Identifier("Test".to_string()),
@@ -321,7 +323,7 @@ mod tests {
         let expected = ["
 const PROG_BINARY: [u8; 144] = [240, 240, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 97, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 98, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];",
 "#[derive(Debug, PartialEq)]
-pub enum Token {
+pub enum TokenVariant {
 Test,
 }"];
 
@@ -339,7 +341,7 @@ Test,
     fn should_codgen_valid_input_with_header() {
         let pattern = Pattern(PatternItem("ab".chars().map(Char::from).collect()));
         let action = Action(ActionItem(
-            "Some(Token::Test)".chars().map(Char::from).collect(),
+            "Some(TokenVariant::Test)".chars().map(Char::from).collect(),
         ));
         let rules = Rules(vec![Rule::new(
             Identifier("Test".to_string()),
@@ -355,7 +357,7 @@ Test,
         let expected_substrs = ["const UNIT: () = ();",
 "const PROG_BINARY: [u8; 144] = [240, 240, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 97, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 98, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];",
 "#[derive(Debug, PartialEq)]
-pub enum Token {
+pub enum TokenVariant {
 Test,
 }"];
 
@@ -379,14 +381,15 @@ Test,
                     id: "Test",
                     capture_ty: None,
                 }]),
-                "#[derive(Debug, PartialEq)]\npub enum Token {\nTest,\n}".to_string(),
+                "#[derive(Debug, PartialEq, Eq)]\npub enum TokenVariant {\nTest,\n}".to_string(),
             ),
             (
                 IrToken(vec![IrTokenVariant {
                     id: "Test",
                     capture_ty: Some(&int8_ct),
                 }]),
-                "#[derive(Debug, PartialEq)]\npub enum Token {\nTest(i8),\n}".to_string(),
+                "#[derive(Debug, PartialEq, Eq)]\npub enum TokenVariant {\nTest(i8),\n}"
+                    .to_string(),
             ),
         ];
 
