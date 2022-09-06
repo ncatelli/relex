@@ -52,6 +52,13 @@ impl Token {
     }
 }
 
+pub fn token_stream_from_input(input: &str) -> Result<TokenStream<'_>, String> {
+    use regex_runtime::bytecode::FromBytecode;
+
+    let program = Instructions::from_bytecode(PROG_BINARY).map_err(|e| e.to_string())?;
+    Ok(TokenStream::new(program, input))
+}
+
 pub struct TokenStream<'a> {
     input_stream: &'a str,
     program: Instructions,
