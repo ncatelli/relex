@@ -83,7 +83,7 @@ fn ruleset<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::RuleSet> {
 }
 
 fn header<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Header> {
-    str_wrapped("{{{", "}}}", header_item()).map(ast::Header::new)
+    whitespace_wrapped(str_wrapped("{{{", "}}}", header_item())).map(ast::Header::new)
 }
 
 pub fn header_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
@@ -116,7 +116,7 @@ pub fn header_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String>
 }
 
 fn rules<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Rules> {
-    parcel::one_or_more(rule()).map(ast::Rules)
+    whitespace_wrapped(parcel::one_or_more(rule())).map(ast::Rules)
 }
 
 fn rule<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Rule> {
@@ -417,6 +417,41 @@ RULE Zero(other: String) [(0)(.*)] => %%{ if other.chars().len == 0 { Some(0) } 
                 }) => rules.len() == 3,
                 _ => false,
             })
+        }
+    }
+
+    #[test]
+    fn should_parse_header_with_rule() {
+        let inputs = vec![
+            // header
+            "{{{();}}}
+RULE Zero [0] => %%{ Some(0) }%%\n
+RULE Zero(digit: u8) [(0)] => %%{ if digit==\"0\" { Some(0) } }%%\n
+RULE Zero(other: String) [(0)(.*)] => %%{ if other.chars().len == 0 { Some(0) } }%%",
+            "
+            
+{{{();}}}
+RULE Zero [0] => %%{ Some(0) }%%\n
+RULE Zero(digit: u8) [(0)] => %%{ if digit==\"0\" { Some(0) } }%%\n
+RULE Zero(other: String) [(0)(.*)] => %%{ if other.chars().len == 0 { Some(0) } }%%",
+            // no header
+            "RULE Zero [0] => %%{ Some(0) }%%\n
+RULE Zero(digit: u8) [(0)] => %%{ if digit==\"0\" { Some(0) } }%%\n
+RULE Zero(other: String) [(0)(.*)] => %%{ if other.chars().len == 0 { Some(0) } }%%",
+            // no header with leading whitespace
+            "
+            
+RULE Zero [0] => %%{ Some(0) }%%\n
+RULE Zero(digit: u8) [(0)] => %%{ if digit==\"0\" { Some(0) } }%%\n
+RULE Zero(other: String) [(0)(.*)] => %%{ if other.chars().len == 0 { Some(0) } }%%",
+        ]
+        .into_iter()
+        .map(|input| input.chars().enumerate().collect::<Vec<(usize, char)>>());
+
+        for (test_id, input) in inputs.into_iter().enumerate() {
+            let parse_result = parse(&input).map(|ruleset| ruleset.rules.0.len());
+
+            assert_eq!((test_id, Ok(3)), (test_id, parse_result));
         }
     }
 }
