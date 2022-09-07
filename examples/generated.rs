@@ -44,6 +44,13 @@ impl Token {
     }
 }
 
+pub fn token_stream_from_input(input: &str) -> Result<TokenStream<'_>, String> {
+    use regex_runtime::bytecode::FromBytecode;
+
+    let program = Instructions::from_bytecode(PROG_BINARY).map_err(|e| e.to_string())?;
+    Ok(TokenStream::new(program, input))
+}
+
 pub struct TokenStream<'a> {
     input_stream: &'a str,
     program: Instructions,
@@ -133,11 +140,7 @@ impl<'a> Iterator for TokenStream<'a> {
 }
 
 fn main() -> Result<(), String> {
-    use regex_runtime::bytecode::FromBytecode;
-
-    let program = Instructions::from_bytecode(PROG_BINARY).map_err(|e| e.to_string())?;
-    let input = "1+25;";
-    let token_stream = TokenStream::new(program, input);
+    let token_stream = token_stream_from_input("1+25;")?;
 
     for tok in token_stream {
         println!("{:?}", tok);
