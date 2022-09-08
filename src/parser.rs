@@ -242,14 +242,14 @@ pub fn action_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Ac
                     return Ok(MatchStatus::Match {
                         span: start..end - 3,
                         remainder: &input[end - 3..],
-                        inner: ast::ActionItem(
-                            (&input[start..end - 3])
+                        inner: ast::ActionItem {
+                            block: (&input[start..end - 3])
                                 .iter()
                                 .map(|(_, c)| c)
                                 .copied()
                                 .map(ast::Char)
                                 .collect(),
-                        ),
+                        },
                     })
                 }
                 // provide an early return in case it falls through to another block

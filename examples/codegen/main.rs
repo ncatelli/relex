@@ -1,12 +1,9 @@
 const RULE_SPEC: &str = "
-{{{}}}
 RULE Number(digit: i32) [([0-9]+)] => %%{ val
                         .parse::<i32>()
-                        .map_err(|e| e.to_string())
-                        .map(TokenVariant::Number)
                         .ok() }%%\n
-RULE Plus [(+)] => %%{ Some(TokenVariant::Plus) }%%
-RULE Semicolon [(;)] => %%{ Some(TokenVariant::Semicolon) }%%
+RULE Plus [(+)] => %%{ }%%
+RULE Semicolon [(;)] => %%{ }%%
 ";
 
 fn main() -> Result<(), String> {

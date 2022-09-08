@@ -178,14 +178,24 @@ impl<'a> ToRust for PatternBin<'a> {
     }
 }
 
+enum ActionKind<'a> {
+    Capturing(&'a ast::Action),
+    NonCapturing(&'a ast::Action),
+}
+
 struct ActionVariantDispatcher<'a> {
+    token_variant: &'a ast::Identifier,
     expr_idx: usize,
-    action: &'a ast::Action,
+    action: ActionKind<'a>,
 }
 
 impl<'a> ActionVariantDispatcher<'a> {
-    fn new(expr_idx: usize, action: &'a ast::Action) -> Self {
-        Self { expr_idx, action }
+    fn new(token_variant: &'a ast::Identifier, expr_idx: usize, action: ActionKind<'a>) -> Self {
+        Self {
+            token_variant,
+            expr_idx,
+            action,
+        }
     }
 }
 
@@ -193,16 +203,28 @@ impl<'a> ToRust for ActionVariantDispatcher<'a> {
     type Error = ();
 
     fn to_rust_code(&self) -> Result<String, Self::Error> {
-        Ok(format!("{} => {{{}}},\n", self.expr_idx, self.action.0))
+        match self.action {
+            ActionKind::Capturing(action) => Ok(format!(
+                "{} => {{{}.map(TokenVariant::{})}},\n",
+                self.expr_idx,
+                action.0,
+                self.token_variant.as_ref()
+            )),
+            ActionKind::NonCapturing(_) => Ok(format!(
+                "{} => {{Some(TokenVariant::{})}},\n",
+                self.expr_idx,
+                self.token_variant.as_ref()
+            )),
+        }
     }
 }
 
 struct ActionDispatcher<'a> {
-    actions: &'a [&'a ast::Action],
+    actions: &'a [ActionVariantDispatcher<'a>],
 }
 
 impl<'a> ActionDispatcher<'a> {
-    fn new(actions: &'a [&'a ast::Action]) -> Self {
+    fn new(actions: &'a [ActionVariantDispatcher<'a>]) -> Self {
         Self { actions }
     }
 
@@ -217,9 +239,7 @@ impl<'a> ToRust for ActionDispatcher<'a> {
         let action_variant_repr = self
             .actions
             .iter()
-            .enumerate()
-            .map(|(expr_idx, action)| ActionVariantDispatcher::new(expr_idx, action))
-            .map(|avd| ToRust::to_rust_code(&avd))
+            .map(ToRust::to_rust_code)
             .collect::<Result<_, ()>>();
 
         let action_variants = action_variant_repr?;
@@ -287,7 +307,25 @@ pub fn codegen(rule_set: &ast::RuleSet) -> Result<String, String> {
         .to_rust_code()
         .map_err(|_| "unable to generate token enum".to_string())?;
 
-    let actions = rules.iter().map(|rule| &rule.action).collect::<Vec<_>>();
+    let actions = rules
+        .iter()
+        .enumerate()
+        .map(|(expr_idx, rule)| {
+            if rule.capture.is_some() {
+                ActionVariantDispatcher::new(
+                    &rule.identifier,
+                    expr_idx,
+                    ActionKind::Capturing(&rule.action),
+                )
+            } else {
+                ActionVariantDispatcher::new(
+                    &rule.identifier,
+                    expr_idx,
+                    ActionKind::NonCapturing(&rule.action),
+                )
+            }
+        })
+        .collect::<Vec<_>>();
     let dispatcher = ActionDispatcher::new(actions.as_slice())
         .to_rust_code()
         .map_err(|_| "unable to generate variant dispatcher".to_string())?;
@@ -315,9 +353,9 @@ mod tests {
     #[test]
     fn should_codgen_valid_input() {
         let pattern = Pattern(PatternItem("ab".chars().map(Char::from).collect()));
-        let action = Action(ActionItem(
-            "Some(TokenVariant::Test)".chars().map(Char::from).collect(),
-        ));
+        let action = Action(ActionItem {
+            block: "Some(TokenVariant::Test)".chars().map(Char::from).collect(),
+        });
         let rules = Rules(vec![Rule::new(
             Identifier("Test".to_string()),
             None,
@@ -347,9 +385,9 @@ Test,
     #[test]
     fn should_codgen_valid_input_with_header() {
         let pattern = Pattern(PatternItem("ab".chars().map(Char::from).collect()));
-        let action = Action(ActionItem(
-            "Some(TokenVariant::Test)".chars().map(Char::from).collect(),
-        ));
+        let action = Action(ActionItem {
+            block: "Some(TokenVariant::Test)".chars().map(Char::from).collect(),
+        });
         let rules = Rules(vec![Rule::new(
             Identifier("Test".to_string()),
             None,

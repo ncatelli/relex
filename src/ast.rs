@@ -180,7 +180,9 @@ impl From<Action> for String {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct ActionItem(pub Vec<Char>);
+pub struct ActionItem {
+    pub block: Vec<Char>,
+}
 
 impl From<ActionItem> for String {
     fn from(src: ActionItem) -> Self {
@@ -190,7 +192,7 @@ impl From<ActionItem> for String {
 
 impl std::fmt::Display for ActionItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for c in self.0.iter().map(|c| c.as_char()) {
+        for c in self.block.iter().map(|c| c.as_char()) {
             f.write_char(c)?
         }
 
