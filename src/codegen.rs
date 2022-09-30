@@ -374,7 +374,7 @@ Test,
 
         let generated_res = codegen(&rule_set);
         for expected_substr in expected {
-            let contains = (&generated_res)
+            let contains = (generated_res)
                 .as_ref()
                 .map(|str| str.contains(expected_substr))
                 .unwrap_or(false);
@@ -408,7 +408,7 @@ Test,
 
         let generated_res = codegen(&rule_set);
         for expected_substr in expected_substrs {
-            let contains = (&generated_res)
+            let contains = (generated_res)
                 .as_ref()
                 .map(|str| str.contains(expected_substr))
                 .unwrap_or(false);
