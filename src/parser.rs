@@ -98,7 +98,7 @@ pub fn header_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String>
                     return Ok(MatchStatus::Match {
                         span: start..end - 3,
                         remainder: &input[end - 3..],
-                        inner: (&input[start..end - 3])
+                        inner: (input[start..end - 3])
                             .iter()
                             .map(|(_, c)| c)
                             .copied()
@@ -209,7 +209,7 @@ pub fn pattern_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::P
                         span: start..end - 2,
                         remainder: &input[end - 2..],
                         inner: ast::PatternItem(
-                            (&input[start..end - 2])
+                            (input[start..end - 2])
                                 .iter()
                                 .map(|(_, c)| c)
                                 .copied()
@@ -243,7 +243,7 @@ pub fn action_item<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ast::Ac
                         span: start..end - 3,
                         remainder: &input[end - 3..],
                         inner: ast::ActionItem {
-                            block: (&input[start..end - 3])
+                            block: (input[start..end - 3])
                                 .iter()
                                 .map(|(_, c)| c)
                                 .copied()
