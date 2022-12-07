@@ -1,2 +1,2 @@
 [workspace]
-members = ["relex"]
+members = ["relex", "relex-derive"]
