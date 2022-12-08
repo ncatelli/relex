@@ -9,11 +9,10 @@ pub enum Token {
 }
 
 fn main() -> Result<(), String> {
-    let mut stream = token_stream_from_input("12345n4n")?;
+    let stream = token_stream_from_input("12345n4n")?;
+    for token in stream {
+        println!("{:?}", token);
+    }
 
-    println!("{:?}", stream.next());
-    println!("{:?}", stream.next());
-    println!("{:?}", stream.next());
-    println!("{:?}", stream.next());
     Ok(())
 }

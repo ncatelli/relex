@@ -2,6 +2,7 @@
 A lexer generator for the first principles project.
 
 ## Examples
+### Using the custom DSL in build.rs
 
 in a `build.rs` script
 
@@ -38,5 +39,28 @@ fn main() -> Result<(), String> {
 }
 ```
 
-## Grammar
+#### Grammar
 The grammar can be found at [relex.ebnf](./docs/relex.ebnf). Additionally this includes an [xhtml version](./docs/relex.xhtml) for viewing in a browser. This was directly generated from [relex.ebnf](./docs/relex.ebnf) with [rr](https://githug.com/ncatelli/rr-docker.git).
+
+### Using proc-macros'
+
+```rust
+use relex_derive::Relex;
+
+#[derive(Relex, Debug, PartialEq, Eq)]
+pub enum Token {
+    #[regex(r"[0-9]+", |lex: &str| { lex.parse::<i32>().ok() })]
+    Int(i32),
+    #[regex(r"n")]
+    N,
+}
+
+fn main() -> Result<(), String> {
+    let stream = token_stream_from_input("12345n4n")?;
+    for token in stream {
+        println!("{:?}", token);
+    }
+
+    Ok(())
+}
+```
