@@ -150,7 +150,7 @@ fn expand_lexer(input: DeriveInput) -> syn::Result<TokenStream> {
     };
 
     let spanned_token = quote! {
-        #[derive(Debug, PartialEq, Eq)]
+        #[derive(Debug)]
         pub struct SpannedToken {
             span: Span,
             variant: #tok_enum_name,

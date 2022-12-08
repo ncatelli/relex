@@ -3,13 +3,21 @@ use relex_derive::Relex;
 #[derive(Relex, Debug, PartialEq, Eq)]
 pub enum Token {
     #[regex(r"[0-9]+", |lex: &str| { lex.parse::<i32>().ok() })]
-    Int(i32),
-    #[regex(r"n")]
-    N,
+    IntLit(i32),
+    #[regex("\"[a-zA-Z]+\"", |lex: &str| { Some(lex.trim_matches('\"').to_string()) })]
+    StringLit(String),
+    #[regex(r"+")]
+    Plus,
+    #[regex(r"-")]
+    Minus,
+    #[regex("\n")]
+    Newline,
+    #[regex(" |\t")]
+    WhiteSpace,
 }
 
 fn main() -> Result<(), String> {
-    let stream = token_stream_from_input("12345n4n")?;
+    let stream = token_stream_from_input("2 + 12-3 + 45+ 4\n\t\"hello\"")?;
     for token in stream {
         println!("{:?}", token);
     }
