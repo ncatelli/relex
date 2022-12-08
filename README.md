@@ -47,8 +47,10 @@ The grammar can be found at [relex.ebnf](./docs/relex.ebnf). Additionally this i
 ```rust
 use relex_derive::Relex;
 
-#[derive(Relex, Debug, PartialEq, Eq)]
+#[derive(Relex, Debug, PartialEq)]
 pub enum Token {
+    #[regex(r"[0-9]+[.][0-9]+", |lex: &str| { lex.parse::<f32>().ok() })]
+    FloatLit(f32),
     #[regex(r"[0-9]+", |lex: &str| { lex.parse::<i32>().ok() })]
     IntLit(i32),
     #[regex("\"[a-zA-Z]+\"", |lex: &str| { Some(lex.trim_matches('\"').to_string()) })]
@@ -61,10 +63,12 @@ pub enum Token {
     Newline,
     #[regex(" |\t")]
     WhiteSpace,
+    #[regex("[.]")]
+    Dot,
 }
 
 fn main() -> Result<(), String> {
-    let stream = token_stream_from_input("2 + 12-3 + 45+ 4\n\t\"hello\"")?;
+    let stream = token_stream_from_input("2 + 12-3 + 45.0+ 4\n\t\"hello\"")?;
     for token in stream {
         println!("{:?}", token);
     }
