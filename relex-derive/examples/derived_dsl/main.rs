@@ -4,8 +4,8 @@ use relex_derive::Relex;
 pub enum Token {
     #[regex(r"[0-9]+", |lex: &str| { lex.parse::<i32>().ok() })]
     Int(i32),
-    #[regex(r"n", |_: &str| Some(()))]
-    N(()),
+    #[regex(r"n")]
+    N,
 }
 
 fn main() -> Result<(), String> {

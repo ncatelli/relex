@@ -3,7 +3,7 @@ use quote::{quote, ToTokens};
 use regex_compiler::ast::Regex;
 use syn::{
     parse::{Parse, ParseStream},
-    parse_macro_input, Data, DataEnum, DeriveInput, ExprClosure, Fields, LitStr, ReturnType, Token,
+    parse_macro_input, Data, DataEnum, DeriveInput, ExprClosure, Fields, LitStr, Token,
 };
 
 use regex_compiler::bytecode::ToBytecode;
@@ -22,7 +22,7 @@ impl SpannedRegex {
 
 struct RegexAttributeMetadata {
     pattern: SpannedRegex,
-    action: ExprClosure,
+    action: Option<ExprClosure>,
 }
 
 impl std::fmt::Debug for RegexAttributeMetadata {
@@ -48,13 +48,21 @@ impl Parse for RegexAttributeMetadata {
             return Err(lookahead.error());
         };
 
-        let _separator: Token![,] = input.parse()?;
-        let action: ExprClosure = input.parse()?;
+        // check whether a handler closure has been provided.
+        if input.is_empty() {
+            syn::Result::Ok(RegexAttributeMetadata {
+                pattern: spanned_regex,
+                action: None,
+            })
+        } else {
+            let _separator: Token![,] = input.parse()?;
+            let action: ExprClosure = input.parse()?;
 
-        syn::Result::Ok(RegexAttributeMetadata {
-            pattern: spanned_regex,
-            action,
-        })
+            syn::Result::Ok(RegexAttributeMetadata {
+                pattern: spanned_regex,
+                action: Some(action),
+            })
+        }
     }
 }
 
@@ -83,28 +91,13 @@ fn expand_lexer(input: DeriveInput) -> syn::Result<TokenStream> {
                 if attr.path.is_ident("regex") {
                     attr.parse_args_with(RegexAttributeMetadata::parse)
                         .and_then(|ram| {
-                            let ram_output = &ram.action.output;
+                            let ram_output = ram.action.as_ref().map(|action| &action.output);
                             match (variant_fields.clone(), ram_output) {
-                                (Fields::Unnamed(f), ReturnType::Type(_, action_ty))
-                                    if f.unnamed.len() == 1 =>
-                                {
-                                    // safe to unwrap due to above guarantee of exactly one elem.
-                                    let first = f.unnamed.first().unwrap();
-                                    let field_ty = &first.ty;
-                                    let action_ty = action_ty.as_ref();
-
-                                    if field_ty == action_ty {
-                                        Ok(ram)
-                                    } else {
-                                        panic!("type mismatch on field and closure: expected field type({:?}), got action type({:?})", field_ty, action_ty);
-                                    }
-                                },
-                                (Fields::Unnamed(f), ReturnType::Default) if f.unnamed.len() == 1 =>
-                                {
-                                    Ok(ram)
-                                },
+                                // an unamed struct with one field
+                                (Fields::Unnamed(f), Some(_)) if f.unnamed.len() == 1 => Ok(ram),
+                                // an empty filed
+                                (Fields::Unit, None) => Ok(ram),
                                 (l, _) => {
-
                                     panic!(
                                         "variant({}) expects exactly 1 unnamed field, got {}",
                                         variant_ident,
@@ -113,9 +106,7 @@ fn expand_lexer(input: DeriveInput) -> syn::Result<TokenStream> {
                                 }
                             }
                         })
-                        .map(|ram|{
-                            LexerAttributeMetadata::Regex(ram)
-                        })
+                        .map(LexerAttributeMetadata::Regex)
                 } else {
                     unreachable!()
                 }
@@ -198,10 +189,15 @@ fn expand_lexer(input: DeriveInput) -> syn::Result<TokenStream> {
         .map(
             |(expr_id, (variant_name, attr_metadata))| match attr_metadata {
                 LexerAttributeMetadata::Regex(ram) => {
-                    let action = &ram.action;
+                    let optional_action = &ram.action;
 
-                    quote! {
-                        #expr_id => (#action)(val).map(#tok_enum_name::#variant_name),
+                    match optional_action {
+                        Some(action) => quote! {
+                            #expr_id => (#action)(val).map(#tok_enum_name::#variant_name),
+                        },
+                        None => quote! {
+                            #expr_id => Some(#tok_enum_name::#variant_name),
+                        },
                     }
                 }
             },
