@@ -3,7 +3,9 @@ use quote::{quote, ToTokens};
 use regex_compiler::ast::Regex;
 use syn::{
     parse::{Parse, ParseStream},
-    parse_macro_input, Data, DataEnum, DeriveInput, ExprClosure, Fields, LitStr, Token,
+    parse_macro_input,
+    spanned::Spanned,
+    Data, DataEnum, DeriveInput, ExprClosure, Fields, Ident, LitStr, Token,
 };
 
 use regex_compiler::bytecode::ToBytecode;
@@ -71,15 +73,50 @@ enum LexerAttributeMetadata {
     Regex(RegexAttributeMetadata),
 }
 
-fn expand_lexer(input: DeriveInput) -> syn::Result<TokenStream> {
+struct TokenVariantMetadata {
+    variant_ident: Ident,
+    attr_metadata: LexerAttributeMetadata,
+}
+
+impl TokenVariantMetadata {
+    fn new(variant_ident: Ident, attr_metadata: LexerAttributeMetadata) -> Self {
+        Self {
+            variant_ident,
+            attr_metadata,
+        }
+    }
+}
+
+struct TokenizerGenerator {
+    enum_ident: Ident,
+    variant_metadata: Vec<TokenVariantMetadata>,
+}
+
+impl TokenizerGenerator {
+    fn new(enum_ident: Ident, variant_metadata: Vec<TokenVariantMetadata>) -> Self {
+        Self {
+            enum_ident,
+            variant_metadata,
+        }
+    }
+}
+
+fn parse(input: DeriveInput) -> Result<TokenizerGenerator, syn::Error> {
+    let input_span = input.span();
     let tok_enum_name = input.ident;
     let variants = match input.data {
         Data::Enum(DataEnum { variants, .. }) => variants,
-        _ => panic!("derive macro only works on enums"),
+        _ => {
+            return Err(syn::Error::new(
+                input_span,
+                "derive macro only works on enums",
+            ))
+        }
     };
 
     let mut token_lexers = vec![];
     for variant in variants {
+        let variant_span = variant.span();
         let variant_ident = variant.ident;
         let variant_fields = variant.fields;
 
@@ -112,14 +149,24 @@ fn expand_lexer(input: DeriveInput) -> syn::Result<TokenStream> {
                 }
             });
 
-        let mut variant_regex_attr = attr_kind.collect::<Vec<_>>();
-        if variant_regex_attr.len() > 1 {
-            panic!("more than one regex attribute specified")
+        let mut variant_regex_attr = attr_kind.collect::<Result<Vec<_>, _>>()?;
+        if variant_regex_attr.len() == 1 {
+            let attr = variant_regex_attr.pop().unwrap();
+            token_lexers.push(TokenVariantMetadata::new(variant_ident, attr));
         } else {
-            let attr = variant_regex_attr.pop().unwrap()?;
-            token_lexers.push((variant_ident, attr));
+            return Err(syn::Error::new(
+                variant_span,
+                "expect exactly one regex attribute specified",
+            ));
         }
     }
+
+    Ok(TokenizerGenerator::new(tok_enum_name, token_lexers))
+}
+
+fn codegen(input: DeriveInput) -> syn::Result<TokenStream> {
+    let token_metadata = parse(input)?;
+    let tok_enum_name = &token_metadata.enum_ident;
 
     let header = quote! {
         use regex_runtime::{Instructions, SaveGroupSlot};
@@ -178,7 +225,8 @@ fn expand_lexer(input: DeriveInput) -> syn::Result<TokenStream> {
         }
     };
 
-    let expression_matchers = token_lexers
+    let expression_matchers = token_metadata
+        .variant_metadata
         .iter()
         .enumerate()
         .map(|(expr_id, other)| {
@@ -187,16 +235,22 @@ fn expand_lexer(input: DeriveInput) -> syn::Result<TokenStream> {
             (id, other)
         })
         .map(
-            |(expr_id, (variant_name, attr_metadata))| match attr_metadata {
+            |(
+                expr_id,
+                TokenVariantMetadata {
+                    variant_ident,
+                    attr_metadata,
+                },
+            )| match &attr_metadata {
                 LexerAttributeMetadata::Regex(ram) => {
                     let optional_action = &ram.action;
 
                     match optional_action {
                         Some(action) => quote! {
-                            #expr_id => (#action)(val).map(#tok_enum_name::#variant_name),
+                            #expr_id => (#action)(val).map(#tok_enum_name::#variant_ident),
                         },
                         None => quote! {
-                            #expr_id => Some(#tok_enum_name::#variant_name),
+                            #expr_id => Some(#tok_enum_name::#variant_ident),
                         },
                     }
                 }
@@ -204,14 +258,15 @@ fn expand_lexer(input: DeriveInput) -> syn::Result<TokenStream> {
         )
         .collect::<TokenStream>();
 
-    let prog_patterns = token_lexers
-        .into_iter()
-        .fold(vec![], |mut acc, (_, attr_metadata)| match attr_metadata {
+    let prog_patterns = token_metadata.variant_metadata.into_iter().fold(
+        vec![],
+        |mut acc, TokenVariantMetadata { attr_metadata, .. }| match attr_metadata {
             LexerAttributeMetadata::Regex(ram) => {
                 acc.push(ram.pattern.regex);
                 acc
             }
-        });
+        },
+    );
 
     let instructions = regex_compiler::compile_many(prog_patterns)
         .map(|insts| insts.to_bytecode())
@@ -302,7 +357,7 @@ fn expand_lexer(input: DeriveInput) -> syn::Result<TokenStream> {
 pub fn relex(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    expand_lexer(input)
+    codegen(input)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
