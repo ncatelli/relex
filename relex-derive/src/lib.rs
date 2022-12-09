@@ -353,7 +353,7 @@ fn codegen(input: DeriveInput) -> syn::Result<TokenStream> {
         .collect())
 }
 
-#[proc_macro_derive(Relex, attributes(end, regex))]
+#[proc_macro_derive(Relex, attributes(regex))]
 pub fn relex(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
