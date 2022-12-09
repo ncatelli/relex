@@ -22,21 +22,21 @@ impl SpannedRegex {
     }
 }
 
-struct RegexAttributeMetadata {
+struct MatchesAttributeMetadata {
     pattern: SpannedRegex,
     action: Option<ExprClosure>,
 }
 
-impl std::fmt::Debug for RegexAttributeMetadata {
+impl std::fmt::Debug for MatchesAttributeMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RegexAttributeMetadata")
+        f.debug_struct("MatchesAttributeMetadata")
             .field("pattern", &self.pattern)
             .field("action", &self.action.to_token_stream())
             .finish()
     }
 }
 
-impl Parse for RegexAttributeMetadata {
+impl Parse for MatchesAttributeMetadata {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
         let lookahead = input.lookahead1();
         let spanned_regex = if lookahead.peek(LitStr) {
@@ -52,7 +52,7 @@ impl Parse for RegexAttributeMetadata {
 
         // check whether a handler closure has been provided.
         if input.is_empty() {
-            syn::Result::Ok(RegexAttributeMetadata {
+            syn::Result::Ok(MatchesAttributeMetadata {
                 pattern: spanned_regex,
                 action: None,
             })
@@ -60,7 +60,7 @@ impl Parse for RegexAttributeMetadata {
             let _separator: Token![,] = input.parse()?;
             let action: ExprClosure = input.parse()?;
 
-            syn::Result::Ok(RegexAttributeMetadata {
+            syn::Result::Ok(MatchesAttributeMetadata {
                 pattern: spanned_regex,
                 action: Some(action),
             })
@@ -68,11 +68,13 @@ impl Parse for RegexAttributeMetadata {
     }
 }
 
+/// Represents all supported attributes for the token.
 #[derive(Debug)]
 enum LexerAttributeMetadata {
-    Regex(RegexAttributeMetadata),
+    Matches(MatchesAttributeMetadata),
 }
 
+/// Stores all supported lexer attributes for a given Token variant.
 struct TokenVariantMetadata {
     variant_ident: Ident,
     attr_metadata: LexerAttributeMetadata,
@@ -87,12 +89,15 @@ impl TokenVariantMetadata {
     }
 }
 
-struct TokenizerGenerator {
+/// Stores the enum and its metadata for generating the tokenizer for each
+/// variant.
+struct TokenizerVariants {
+    /// Represents the Identifier for the Token enum.
     enum_ident: Ident,
     variant_metadata: Vec<TokenVariantMetadata>,
 }
 
-impl TokenizerGenerator {
+impl TokenizerVariants {
     fn new(enum_ident: Ident, variant_metadata: Vec<TokenVariantMetadata>) -> Self {
         Self {
             enum_ident,
@@ -101,10 +106,10 @@ impl TokenizerGenerator {
     }
 }
 
-fn parse(input: DeriveInput) -> Result<TokenizerGenerator, syn::Error> {
+fn parse(input: DeriveInput) -> Result<TokenizerVariants, syn::Error> {
     let input_span = input.span();
     let tok_enum_name = input.ident;
-    let variants = match input.data {
+    let enum_variants = match input.data {
         Data::Enum(DataEnum { variants, .. }) => variants,
         _ => {
             return Err(syn::Error::new(
@@ -114,116 +119,144 @@ fn parse(input: DeriveInput) -> Result<TokenizerGenerator, syn::Error> {
         }
     };
 
-    let mut token_lexers = vec![];
-    for variant in variants {
-        let variant_span = variant.span();
-        let variant_ident = variant.ident;
-        let variant_fields = variant.fields;
+    // token enum variants with their tokenizer metadata parsed.
+    enum_variants
+        .into_iter()
+        .map(|variant| {
+            let variant_span = variant.span();
+            let variant_ident = variant.ident;
+            let variant_fields = variant.fields;
 
-        let attr_kind = variant
-            .attrs
-            .iter()
-            .filter(|attr| attr.path.is_ident("regex"))
-            .map(|attr| {
-                if attr.path.is_ident("regex") {
-                    attr.parse_args_with(RegexAttributeMetadata::parse)
-                        .and_then(|ram| {
-                            let ram_output = ram.action.as_ref().map(|action| &action.output);
-                            match (variant_fields.clone(), ram_output) {
+            let attr_kind = variant
+                .attrs
+                .iter()
+                .filter(|attr| attr.path.is_ident("matches"))
+                .map(|attr| {
+                    attr.parse_args_with(MatchesAttributeMetadata::parse)
+                        .and_then(|mam| {
+                            let mam_output = mam.action.as_ref().map(|action| &action.output);
+                            match (variant_fields.clone(), mam_output) {
                                 // an unamed struct with one field
-                                (Fields::Unnamed(f), Some(_)) if f.unnamed.len() == 1 => Ok(ram),
+                                (Fields::Unnamed(f), Some(_)) if f.unnamed.len() == 1 => Ok(mam),
                                 // an empty filed
-                                (Fields::Unit, None) => Ok(ram),
-                                (l, _) => {
-                                    panic!(
+                                (Fields::Unit, None) => Ok(mam),
+                                (l, _) => Err(syn::Error::new(
+                                    l.span(),
+                                    format!(
                                         "variant({}) expects exactly 1 unnamed field, got {}",
-                                        variant_ident,
+                                        &variant_ident,
                                         l.len()
-                                    )
-                                }
+                                    ),
+                                )),
                             }
                         })
-                        .map(LexerAttributeMetadata::Regex)
-                } else {
-                    unreachable!()
+                        .map(LexerAttributeMetadata::Matches)
+                });
+
+            let mut variant_match_attr = attr_kind.collect::<Result<Vec<_>, _>>()?;
+            if variant_match_attr.len() == 1 {
+                let attr = variant_match_attr.pop().unwrap();
+                Ok(TokenVariantMetadata::new(variant_ident, attr))
+            } else {
+                Err(syn::Error::new(
+                    variant_span,
+                    "expect exactly one match attribute specified",
+                ))
+            }
+        })
+        .collect::<Result<_, _>>()
+        .map(|enriched_token_variants| {
+            TokenizerVariants::new(tok_enum_name, enriched_token_variants)
+        })
+}
+
+/// Represents the generated header that is present in every lexer.
+struct CodeGenHeader;
+
+impl ToTokens for CodeGenHeader {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let header_stream = quote! {
+            use regex_runtime::{Instructions, SaveGroupSlot};
+
+            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+            pub struct Span {
+                start: usize,
+                end: usize,
+            }
+
+            impl From<Span> for std::ops::Range<usize> {
+                fn from(span: Span) -> Self {
+                    let start = span.start;
+                    let end = span.end;
+
+                    start..end
                 }
-            });
+            }
 
-        let mut variant_regex_attr = attr_kind.collect::<Result<Vec<_>, _>>()?;
-        if variant_regex_attr.len() == 1 {
-            let attr = variant_regex_attr.pop().unwrap();
-            token_lexers.push(TokenVariantMetadata::new(variant_ident, attr));
-        } else {
-            return Err(syn::Error::new(
-                variant_span,
-                "expect exactly one regex attribute specified",
-            ));
-        }
+            impl From<std::ops::Range<usize>> for Span {
+                fn from(range: std::ops::Range<usize>) -> Self {
+                    Self {
+                        start: range.start,
+                        end: range.end,
+                    }
+                }
+            }
+        };
+
+        tokens.extend(header_stream)
     }
+}
 
-    Ok(TokenizerGenerator::new(tok_enum_name, token_lexers))
+struct CodeGenSpannedToken<'a> {
+    enum_name: &'a Ident,
+}
+
+impl<'a> CodeGenSpannedToken<'a> {
+    fn new(enum_name: &'a Ident) -> Self {
+        Self { enum_name }
+    }
+}
+
+impl<'a> ToTokens for CodeGenSpannedToken<'a> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let tok_enum_name = &self.enum_name;
+
+        let spanned_token = quote! {
+            #[derive(Debug)]
+            pub struct SpannedToken {
+                span: Span,
+                variant: #tok_enum_name,
+            }
+
+            impl SpannedToken {
+                pub fn new(span: Span, variant: #tok_enum_name) -> Self {
+                    Self { span, variant }
+                }
+
+                pub fn as_span(&self) -> Span {
+                    self.span
+                }
+
+                pub fn to_variant(self) -> #tok_enum_name {
+                    self.variant
+                }
+            }
+
+            pub fn token_stream_from_input(input: &str) -> Result<TokenStream<'_>, String> {
+                use regex_runtime::bytecode::FromBytecode;
+
+                let program = Instructions::from_bytecode(PROG_BINARY).map_err(|e| e.to_string())?;
+                Ok(TokenStream::new(program, input))
+            }
+        };
+
+        tokens.extend(spanned_token)
+    }
 }
 
 fn codegen(input: DeriveInput) -> syn::Result<TokenStream> {
     let token_metadata = parse(input)?;
     let tok_enum_name = &token_metadata.enum_ident;
-
-    let header = quote! {
-        use regex_runtime::{Instructions, SaveGroupSlot};
-
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        pub struct Span {
-            start: usize,
-            end: usize,
-        }
-
-        impl From<Span> for std::ops::Range<usize> {
-            fn from(span: Span) -> Self {
-                let start = span.start;
-                let end = span.end;
-
-                start..end
-            }
-        }
-
-        impl From<std::ops::Range<usize>> for Span {
-            fn from(range: std::ops::Range<usize>) -> Self {
-                Self {
-                    start: range.start,
-                    end: range.end,
-                }
-            }
-        }
-    };
-
-    let spanned_token = quote! {
-        #[derive(Debug)]
-        pub struct SpannedToken {
-            span: Span,
-            variant: #tok_enum_name,
-        }
-
-        impl SpannedToken {
-            pub fn new(span: Span, variant: #tok_enum_name) -> Self {
-                Self { span, variant }
-            }
-
-            pub fn as_span(&self) -> Span {
-                self.span
-            }
-
-            pub fn to_variant(self) -> #tok_enum_name{
-                self.variant
-            }
-        }
-
-        pub fn token_stream_from_input(input: &str) -> Result<TokenStream<'_>, String> {
-            use regex_runtime::bytecode::FromBytecode;
-
-            let program = Instructions::from_bytecode(PROG_BINARY).map_err(|e| e.to_string())?;
-            Ok(TokenStream::new(program, input))
-        }
-    };
 
     let expression_matchers = token_metadata
         .variant_metadata
@@ -242,8 +275,8 @@ fn codegen(input: DeriveInput) -> syn::Result<TokenStream> {
                     attr_metadata,
                 },
             )| match &attr_metadata {
-                LexerAttributeMetadata::Regex(ram) => {
-                    let optional_action = &ram.action;
+                LexerAttributeMetadata::Matches(mam) => {
+                    let optional_action = &mam.action;
 
                     match optional_action {
                         Some(action) => quote! {
@@ -261,8 +294,8 @@ fn codegen(input: DeriveInput) -> syn::Result<TokenStream> {
     let prog_patterns = token_metadata.variant_metadata.into_iter().fold(
         vec![],
         |mut acc, TokenVariantMetadata { attr_metadata, .. }| match attr_metadata {
-            LexerAttributeMetadata::Regex(ram) => {
-                acc.push(ram.pattern.regex);
+            LexerAttributeMetadata::Matches(mam) => {
+                acc.push(mam.pattern.regex);
                 acc
             }
         },
@@ -345,15 +378,16 @@ fn codegen(input: DeriveInput) -> syn::Result<TokenStream> {
             }
     };
 
-    Ok(header
+    Ok(CodeGenHeader
+        .to_token_stream()
         .into_iter()
-        .chain(spanned_token.into_iter())
+        .chain(CodeGenSpannedToken::new(tok_enum_name).to_token_stream())
         .chain(program.into_iter())
         .chain(token_stream.into_iter())
         .collect())
 }
 
-#[proc_macro_derive(Relex, attributes(regex))]
+#[proc_macro_derive(Relex, attributes(matches))]
 pub fn relex(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 

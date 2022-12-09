@@ -2,21 +2,21 @@ use relex_derive::Relex;
 
 #[derive(Relex, Debug, PartialEq)]
 pub enum Token {
-    #[regex(r"[0-9]+[.][0-9]+", |lex: &str| { lex.parse::<f32>().ok() })]
+    #[matches(r"[0-9]+[.][0-9]+", |lex: &str| { lex.parse::<f32>().ok() })]
     FloatLit(f32),
-    #[regex(r"[0-9]+", |lex: &str| { lex.parse::<i32>().ok() })]
+    #[matches(r"[0-9]+", |lex: &str| { lex.parse::<i32>().ok() })]
     IntLit(i32),
-    #[regex("\"[a-zA-Z]+\"", |lex: &str| { Some(lex.trim_matches('\"').to_string()) })]
+    #[matches("\"[a-zA-Z]+\"", |lex: &str| { Some(lex.trim_matches('\"').to_string()) })]
     StringLit(String),
-    #[regex(r"+")]
+    #[matches(r"+")]
     Plus,
-    #[regex(r"-")]
+    #[matches(r"-")]
     Minus,
-    #[regex("\n")]
+    #[matches("\n")]
     Newline,
-    #[regex(" |\t")]
+    #[matches(" |\t")]
     WhiteSpace,
-    #[regex("[.]")]
+    #[matches("[.]")]
     Dot,
 }
 
