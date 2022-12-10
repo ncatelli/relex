@@ -1,6 +1,5 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
-use regex_compiler::ast::Regex;
 use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
@@ -10,20 +9,25 @@ use syn::{
 
 use regex_compiler::bytecode::ToBytecode;
 
+/// Represent a regex ast with an associated span.
 #[derive(Debug)]
 struct SpannedRegex {
     _span: Span,
-    regex: Regex,
+    regex: regex_compiler::ast::Regex,
 }
 
 impl SpannedRegex {
-    fn new(span: Span, regex: Regex) -> Self {
+    fn new(span: Span, regex: regex_compiler::ast::Regex) -> Self {
         Self { _span: span, regex }
     }
 }
 
+/// Parsed metatdata for the `Matches` attribute.
 struct MatchesAttributeMetadata {
+    /// Represents the defined regular expression used to match a token.
     pattern: SpannedRegex,
+    /// An optional action for converting the matched pattern to a
+    /// corresponding token field.
     action: Option<ExprClosure>,
 }
 
@@ -76,14 +80,14 @@ enum LexerAttributeMetadata {
 
 /// Stores all supported lexer attributes for a given Token variant.
 struct TokenVariantMetadata {
-    variant_ident: Ident,
+    ident: Ident,
     attr_metadata: LexerAttributeMetadata,
 }
 
 impl TokenVariantMetadata {
-    fn new(variant_ident: Ident, attr_metadata: LexerAttributeMetadata) -> Self {
+    fn new(ident: Ident, attr_metadata: LexerAttributeMetadata) -> Self {
         Self {
-            variant_ident,
+            ident,
             attr_metadata,
         }
     }
@@ -254,8 +258,7 @@ impl<'a> ToTokens for CodeGenSpannedToken<'a> {
     }
 }
 
-fn codegen(input: DeriveInput) -> syn::Result<TokenStream> {
-    let token_metadata = parse(input)?;
+fn codegen(token_metadata: TokenizerVariants) -> syn::Result<TokenStream> {
     let tok_enum_name = &token_metadata.enum_ident;
 
     let expression_matchers = token_metadata
@@ -271,7 +274,7 @@ fn codegen(input: DeriveInput) -> syn::Result<TokenStream> {
             |(
                 expr_id,
                 TokenVariantMetadata {
-                    variant_ident,
+                    ident: variant_ident,
                     attr_metadata,
                 },
             )| match &attr_metadata {
@@ -391,7 +394,8 @@ fn codegen(input: DeriveInput) -> syn::Result<TokenStream> {
 pub fn relex(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
-    codegen(input)
+    parse(input)
+        .and_then(codegen)
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
