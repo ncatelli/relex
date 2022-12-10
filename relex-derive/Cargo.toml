@@ -1,0 +1,20 @@
+[package]
+name = "relex-derive"
+version = "0.1.0"
+edition = "2021"
+workspace = ".."
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "1.0", features = [
+	"derive",
+	"parsing",
+	"full",
+	"extra-traits",
+] }
+quote = "1.0"
+proc-macro2 = "1.0"
+regex-compiler = { git = "https://github.com/ncatelli/regex", branch = "main" }
+regex-runtime = { git = "https://github.com/ncatelli/regex", branch = "main" }
