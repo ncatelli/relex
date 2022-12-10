@@ -96,14 +96,16 @@ impl TokenVariantMetadata {
 /// Stores the enum and its metadata for generating the tokenizer for each
 /// variant.
 struct TokenizerVariants {
+    span: Span,
     /// Represents the Identifier for the Token enum.
     enum_ident: Ident,
     variant_metadata: Vec<TokenVariantMetadata>,
 }
 
 impl TokenizerVariants {
-    fn new(enum_ident: Ident, variant_metadata: Vec<TokenVariantMetadata>) -> Self {
+    fn new(span: Span, enum_ident: Ident, variant_metadata: Vec<TokenVariantMetadata>) -> Self {
         Self {
+            span,
             enum_ident,
             variant_metadata,
         }
@@ -170,7 +172,7 @@ fn parse(input: DeriveInput) -> Result<TokenizerVariants, syn::Error> {
         })
         .collect::<Result<_, _>>()
         .map(|enriched_token_variants| {
-            TokenizerVariants::new(tok_enum_name, enriched_token_variants)
+            TokenizerVariants::new(input_span, tok_enum_name, enriched_token_variants)
         })
 }
 
@@ -211,29 +213,30 @@ impl ToTokens for CodeGenHeader {
     }
 }
 
+/// Generates the enum used to capture all token variants at runtime.
 struct CodeGenSpannedToken<'a> {
-    enum_name: &'a Ident,
+    enum_ident: &'a Ident,
 }
 
 impl<'a> CodeGenSpannedToken<'a> {
-    fn new(enum_name: &'a Ident) -> Self {
-        Self { enum_name }
+    fn new(enum_ident: &'a Ident) -> Self {
+        Self { enum_ident }
     }
 }
 
 impl<'a> ToTokens for CodeGenSpannedToken<'a> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let tok_enum_name = &self.enum_name;
+        let tok_enum_ident = self.enum_ident;
 
         let spanned_token = quote! {
             #[derive(Debug)]
             pub struct SpannedToken {
                 span: Span,
-                variant: #tok_enum_name,
+                variant: #tok_enum_ident,
             }
 
             impl SpannedToken {
-                pub fn new(span: Span, variant: #tok_enum_name) -> Self {
+                pub fn new(span: Span, variant: #tok_enum_ident) -> Self {
                     Self { span, variant }
                 }
 
@@ -241,7 +244,7 @@ impl<'a> ToTokens for CodeGenSpannedToken<'a> {
                     self.span
                 }
 
-                pub fn to_variant(self) -> #tok_enum_name {
+                pub fn to_variant(self) -> #tok_enum_ident {
                     self.variant
                 }
             }
@@ -258,138 +261,189 @@ impl<'a> ToTokens for CodeGenSpannedToken<'a> {
     }
 }
 
-fn codegen(token_metadata: TokenizerVariants) -> syn::Result<TokenStream> {
-    let tok_enum_name = &token_metadata.enum_ident;
+/// Captures the generated regex binary to be embedded in the program.
+struct CodeGenProgram {
+    program: regex_runtime::Instructions,
+}
 
-    let expression_matchers = token_metadata
-        .variant_metadata
-        .iter()
-        .enumerate()
-        .map(|(expr_id, other)| {
-            let id = u32::try_from(expr_id).unwrap();
+impl CodeGenProgram {
+    fn new(program: regex_runtime::Instructions) -> Self {
+        Self { program }
+    }
+}
 
-            (id, other)
-        })
-        .map(
-            |(
-                expr_id,
-                TokenVariantMetadata {
-                    ident: variant_ident,
-                    attr_metadata,
-                },
-            )| match &attr_metadata {
-                LexerAttributeMetadata::Matches(mam) => {
-                    let optional_action = &mam.action;
+impl ToTokens for CodeGenProgram {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let instructions = self.program.to_bytecode();
 
-                    match optional_action {
-                        Some(action) => quote! {
-                            #expr_id => (#action)(val).map(#tok_enum_name::#variant_ident),
-                        },
-                        None => quote! {
-                            #expr_id => Some(#tok_enum_name::#variant_ident),
-                        },
-                    }
-                }
-            },
-        )
-        .collect::<TokenStream>();
+        let byte_count = instructions.len();
 
-    let prog_patterns = token_metadata.variant_metadata.into_iter().fold(
-        vec![],
-        |mut acc, TokenVariantMetadata { attr_metadata, .. }| match attr_metadata {
-            LexerAttributeMetadata::Matches(mam) => {
-                acc.push(mam.pattern.regex);
-                acc
-            }
-        },
-    );
+        let instructions = instructions
+            .into_iter()
+            .map(|byte| quote! {#byte,})
+            .collect::<TokenStream>();
 
-    let instructions = regex_compiler::compile_many(prog_patterns)
-        .map(|insts| insts.to_bytecode())
-        .unwrap();
+        let program_tokens = quote! {
+            const PROG_BINARY: [u8; #byte_count] = [ #instructions ];
+        };
 
-    let byte_count = instructions.len();
+        tokens.extend(program_tokens)
+    }
+}
 
-    let instructions = instructions
-        .into_iter()
-        .map(|byte| quote! {#byte,})
-        .collect::<TokenStream>();
+/// Captures the `TokenStream`, not to be confused with
+/// `proc-macro::TokenStream` to provide a stream of lexed tokens at runtime.
+struct CodeGenTokenStream {
+    matchers: TokenStream,
+}
 
-    let program = quote! {
-        const PROG_BINARY: [u8; #byte_count] = [ #instructions ];
-    };
+impl CodeGenTokenStream {
+    fn new(token_metadata: &TokenizerVariants) -> Self {
+        let tok_enum_ident = &token_metadata.enum_ident;
 
-    let token_stream = quote! {
-            pub struct TokenStream<'a> {
-                input_stream: &'a str,
-                program: Instructions,
-                offset: usize,
-            }
+        let matchers = token_metadata
+            .variant_metadata
+            .iter()
+            .enumerate()
+            .map(|(expr_id, other)| {
+                let id = u32::try_from(expr_id).unwrap();
 
-            impl<'a> TokenStream<'a> {
-                pub fn new(program: Instructions, input_stream: &'a str) -> Self {
-                    Self {
-                        input_stream,
-                        program,
-                        offset: 0,
-                    }
-                }
-            }
+                (id, other)
+            })
+            .map(
+                |(
+                    expr_id,
+                    TokenVariantMetadata {
+                        ident: variant_ident,
+                        attr_metadata,
+                    },
+                )| match &attr_metadata {
+                    LexerAttributeMetadata::Matches(mam) => {
+                        let optional_action = &mam.action;
 
-            impl<'a> Iterator for TokenStream<'a> {
-                type Item = SpannedToken;
-
-                #[allow(clippy::redundant_closure_call)]
-                fn next(&mut self) -> Option<Self::Item> {
-                    let res = regex_runtime::run::<1>(&self.program, self.input_stream);
-
-                    let (tok, next_input, next_offset) = match res {
-                        Some(
-                            [SaveGroupSlot::Complete {
-                                expression_id,
-                                start,
-                                end,
-                            }],
-                        ) => {
-                            let val = self.input_stream.get(start..end)?;
-
-                            let variant = match expression_id {
-                                #expression_matchers
-                                _ => unreachable!(),
-                            };
-
-                            let next_input = self.input_stream.get(end..)?;
-                            // the next match should always start at 0, so the end value marks consumed chars.
-                            let consumed = end;
-
-                            let adjusted_start = self.offset + start;
-                            let adjusted_end = self.offset + end;
-
-                            variant
-                                .map(|tv| SpannedToken::new(Span::from(adjusted_start..adjusted_end), tv))
-                                .map(|tok| (tok, next_input, consumed))
+                        match optional_action {
+                            Some(action) => quote! {
+                                #expr_id => (#action)(val).map(#tok_enum_ident::#variant_ident),
+                            },
+                            None => quote! {
+                                #expr_id => Some(#tok_enum_ident::#variant_ident),
+                            },
                         }
+                    }
+                },
+            )
+            .collect::<TokenStream>();
 
-                        _ => None,
-                    }?;
+        Self { matchers }
+    }
+}
 
-                    // advance the stream
-                    self.input_stream = next_input;
-                    self.offset += next_offset;
-                    Some(tok)
+impl ToTokens for CodeGenTokenStream {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let expression_matchers = &self.matchers;
+
+        let token_stream = quote! {
+                pub struct TokenStream<'a> {
+                    input_stream: &'a str,
+                    program: Instructions,
+                    offset: usize,
                 }
-            }
-    };
 
+                impl<'a> TokenStream<'a> {
+                    pub fn new(program: Instructions, input_stream: &'a str) -> Self {
+                        Self {
+                            input_stream,
+                            program,
+                            offset: 0,
+                        }
+                    }
+                }
+
+                impl<'a> Iterator for TokenStream<'a> {
+                    type Item = SpannedToken;
+
+                    fn next(&mut self) -> Option<Self::Item> {
+                        let res = regex_runtime::run::<1>(&self.program, self.input_stream);
+
+                        let (tok, next_input, next_offset) = match res {
+                            Some(
+                                [SaveGroupSlot::Complete {
+                                    expression_id,
+                                    start,
+                                    end,
+                                }],
+                            ) => {
+                                let val = self.input_stream.get(start..end)?;
+
+                                let variant = match expression_id {
+                                    #expression_matchers
+                                    _ => unreachable!(),
+                                };
+
+                                let next_input = self.input_stream.get(end..)?;
+                                // the next match should always start at 0, so the end value marks consumed chars.
+                                let consumed = end;
+
+                                let adjusted_start = self.offset + start;
+                                let adjusted_end = self.offset + end;
+
+                                variant
+                                    .map(|tv| SpannedToken::new(Span::from(adjusted_start..adjusted_end), tv))
+                                    .map(|tok| (tok, next_input, consumed))
+                            }
+
+                            _ => None,
+                        }?;
+
+                        // advance the stream
+                        self.input_stream = next_input;
+                        self.offset += next_offset;
+                        Some(tok)
+                    }
+                }
+        };
+
+        tokens.extend(token_stream)
+    }
+}
+
+/// Generates a runtime lexer from a set of variants.
+fn codegen(token_metadata: TokenizerVariants) -> syn::Result<TokenStream> {
+    let tok_enum_ident = &token_metadata.enum_ident;
+    let tok_enum_span = token_metadata.span;
+
+    // generate the tokenizer generator from the parsed metadata.
+    let codegen_token_stream = CodeGenTokenStream::new(&token_metadata);
+
+    // Compile all regular expressions into the state machine and convert to a
+    // binary representation for embedding.
+    let codegen_program = {
+        let prog_patterns = token_metadata
+            .variant_metadata
+            .into_iter()
+            .map(
+                |TokenVariantMetadata { attr_metadata, .. }| match attr_metadata {
+                    LexerAttributeMetadata::Matches(mam) => mam.pattern.regex,
+                },
+            )
+            .collect::<Vec<_>>();
+
+        regex_compiler::compile_many(prog_patterns)
+            .map_err(|e| syn::Error::new(tok_enum_span, e))
+            .map(CodeGenProgram::new)
+    }?;
+
+    // Join all the token streams into a single stream.
     Ok(CodeGenHeader
         .to_token_stream()
         .into_iter()
-        .chain(CodeGenSpannedToken::new(tok_enum_name).to_token_stream())
-        .chain(program.into_iter())
-        .chain(token_stream.into_iter())
+        .chain(CodeGenSpannedToken::new(tok_enum_ident).to_token_stream())
+        .chain(codegen_program.to_token_stream())
+        .chain(codegen_token_stream.to_token_stream())
         .collect())
 }
 
+/// The dispatcher method for tokens annotated with the Relex derive.
 #[proc_macro_derive(Relex, attributes(matches))]
 pub fn relex(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
