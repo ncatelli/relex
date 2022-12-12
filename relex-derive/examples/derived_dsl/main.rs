@@ -14,7 +14,7 @@ pub enum Token {
     Minus,
     #[matches("\n")]
     Newline,
-    #[matches(" |\t")]
+    #[skip(" |\t")]
     WhiteSpace,
     #[matches("[.]")]
     Dot,

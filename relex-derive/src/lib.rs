@@ -72,10 +72,54 @@ impl Parse for MatchesAttributeMetadata {
     }
 }
 
+/// Parsed metatdata for the `skips` attribute.
+#[derive(Debug)]
+#[allow(unused)]
+struct SkipAttributeMetadata {
+    /// Represents the defined regular expression used to match a token.
+    pattern: SpannedRegex,
+}
+
+impl Parse for SkipAttributeMetadata {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let input_span = input.span();
+        let lookahead = input.lookahead1();
+        let spanned_regex = if lookahead.peek(LitStr) {
+            let pat: LitStr = input.parse()?;
+            let span = pat.span();
+
+            regex_compiler::parser::parse(format!("({})", &pat.value()))
+                .map(|regex| SpannedRegex::new(span, regex))
+                .map_err(|e| syn::Error::new_spanned(pat, e))?
+        } else {
+            return Err(lookahead.error());
+        };
+
+        // check whether a handler closure has been provided.
+        if input.is_empty() {
+            syn::Result::Ok(SkipAttributeMetadata {
+                pattern: spanned_regex,
+            })
+        } else {
+            Err(syn::Error::new(
+                input_span,
+                "expected no additional attributes after the pattern",
+            ))
+        }
+    }
+}
+
+#[derive(Debug)]
+enum LexerAttributeKind {
+    Matches,
+    Skip,
+}
+
 /// Represents all supported attributes for the token.
 #[derive(Debug)]
 enum LexerAttributeMetadata {
     Matches(MatchesAttributeMetadata),
+    Skip(SkipAttributeMetadata),
 }
 
 /// Stores all supported lexer attributes for a given Token variant.
@@ -136,27 +180,42 @@ fn parse(input: DeriveInput) -> Result<TokenizerVariants, syn::Error> {
             let attr_kind = variant
                 .attrs
                 .iter()
-                .filter(|attr| attr.path.is_ident("matches"))
-                .map(|attr| {
-                    attr.parse_args_with(MatchesAttributeMetadata::parse)
-                        .and_then(|mam| {
-                            let mam_output = mam.action.as_ref().map(|action| &action.output);
-                            match (variant_fields.clone(), mam_output) {
-                                // an unamed struct with one field
-                                (Fields::Unnamed(f), Some(_)) if f.unnamed.len() == 1 => Ok(mam),
-                                // an empty filed
-                                (Fields::Unit, None) => Ok(mam),
-                                (l, _) => Err(syn::Error::new(
-                                    l.span(),
-                                    format!(
-                                        "variant({}) expects exactly 1 unnamed field, got {}",
-                                        &variant_ident,
-                                        l.len()
-                                    ),
-                                )),
-                            }
-                        })
-                        .map(LexerAttributeMetadata::Matches)
+                .filter_map(|attr| {
+                    if attr.path.is_ident("matches") {
+                        Some((LexerAttributeKind::Matches, attr))
+                    } else if attr.path.is_ident("skip") {
+                        Some((LexerAttributeKind::Skip, attr))
+                    } else {
+                        None
+                    }
+                })
+                .map(|(kind, attr)| match kind {
+                    LexerAttributeKind::Matches => {
+                        attr.parse_args_with(MatchesAttributeMetadata::parse)
+                            .and_then(|mam| {
+                                let mam_output = mam.action.as_ref().map(|action| &action.output);
+                                match (variant_fields.clone(), mam_output) {
+                                    // an unamed struct with one field
+                                    (Fields::Unnamed(f), Some(_)) if f.unnamed.len() == 1 => {
+                                        Ok(mam)
+                                    }
+                                    // an empty filed
+                                    (Fields::Unit, None) => Ok(mam),
+                                    (l, _) => Err(syn::Error::new(
+                                        l.span(),
+                                        format!(
+                                            "variant({}) expects exactly 1 unnamed field, got {}",
+                                            &variant_ident,
+                                            l.len()
+                                        ),
+                                    )),
+                                }
+                            })
+                            .map(LexerAttributeMetadata::Matches)
+                    }
+                    LexerAttributeKind::Skip => attr
+                        .parse_args_with(SkipAttributeMetadata::parse)
+                        .map(LexerAttributeMetadata::Skip),
                 });
 
             let mut variant_match_attr = attr_kind.collect::<Result<Vec<_>, _>>()?;
@@ -318,18 +377,22 @@ impl CodeGenTokenStream {
                         attr_metadata,
                     },
                 )| match &attr_metadata {
-                    LexerAttributeMetadata::Matches(mam) => {
-                        let optional_action = &mam.action;
-
+                    LexerAttributeMetadata::Matches(MatchesAttributeMetadata { action: optional_action , ..}) => {
                         match optional_action {
                             Some(action) => quote! {
-                                #expr_id => (#action)(val).map(#tok_enum_ident::#variant_ident),
+                                #expr_id => match (#action)(val) {
+                                    Some(res) => TokenStreamOutput::Match(#tok_enum_ident::#variant_ident(res)),
+                                    None => TokenStreamOutput::NoMatch,
+                                }
                             },
                             None => quote! {
-                                #expr_id => Some(#tok_enum_ident::#variant_ident),
+                                #expr_id => TokenStreamOutput::Match(#tok_enum_ident::#variant_ident),
                             },
                         }
                     }
+                    LexerAttributeMetadata::Skip(_) => quote! {
+                        #expr_id => TokenStreamOutput::Skip(#tok_enum_ident::#variant_ident),
+                    },
                 },
             )
             .collect::<TokenStream>();
@@ -343,6 +406,12 @@ impl ToTokens for CodeGenTokenStream {
         let expression_matchers = &self.matchers;
 
         let token_stream = quote! {
+                enum TokenStreamOutput<T> {
+                    Match(T),
+                    Skip(T),
+                    NoMatch,
+                }
+
                 pub struct TokenStream<'a> {
                     input_stream: &'a str,
                     program: Instructions,
@@ -363,42 +432,52 @@ impl ToTokens for CodeGenTokenStream {
                     type Item = SpannedToken;
 
                     fn next(&mut self) -> Option<Self::Item> {
-                        let res = regex_runtime::run::<1>(&self.program, self.input_stream);
+                        loop {
+                            let res = regex_runtime::run::<1>(&self.program, self.input_stream);
 
-                        let (tok, next_input, next_offset) = match res {
-                            Some(
-                                [SaveGroupSlot::Complete {
-                                    expression_id,
-                                    start,
-                                    end,
-                                }],
-                            ) => {
-                                let val = self.input_stream.get(start..end)?;
+                            let (tok, next_input, next_offset) = match res {
+                                Some(
+                                    [SaveGroupSlot::Complete {
+                                        expression_id,
+                                        start,
+                                        end,
+                                    }],
+                                ) => {
+                                    let val = self.input_stream.get(start..end)?;
 
-                                let variant = match expression_id {
-                                    #expression_matchers
-                                    _ => unreachable!(),
-                                };
+                                    let variant = match expression_id {
+                                        #expression_matchers
+                                        _ => unreachable!(),
+                                    };
 
-                                let next_input = self.input_stream.get(end..)?;
-                                // the next match should always start at 0, so the end value marks consumed chars.
-                                let consumed = end;
+                                    let next_input = self.input_stream.get(end..)?;
+                                    // the next match should always start at 0, so the end value marks consumed chars.
+                                    let consumed = end;
 
-                                let adjusted_start = self.offset + start;
-                                let adjusted_end = self.offset + end;
+                                    let adjusted_start = self.offset + start;
+                                    let adjusted_end = self.offset + end;
 
-                                variant
-                                    .map(|tv| SpannedToken::new(Span::from(adjusted_start..adjusted_end), tv))
-                                    .map(|tok| (tok, next_input, consumed))
+                                    match variant {
+                                        TokenStreamOutput::Match(tv) => Some(TokenStreamOutput::Match(SpannedToken::new(Span::from(adjusted_start..adjusted_end), tv))),
+                                        TokenStreamOutput::Skip(tv) => Some(TokenStreamOutput::Skip(SpannedToken::new(Span::from(adjusted_start..adjusted_end), tv))),
+                                        TokenStreamOutput::NoMatch => None,
+                                    }.map(|tok| (tok, next_input, consumed))
+                                }
+
+                                _ => None,
+                            }?;
+
+                            // advance the stream
+                            self.input_stream = next_input;
+                            self.offset += next_offset;
+
+                            match tok {
+                                TokenStreamOutput::Skip(t) => continue,
+                                TokenStreamOutput::NoMatch => return None,
+                                TokenStreamOutput::Match(t) => return Some(t),
+
                             }
-
-                            _ => None,
-                        }?;
-
-                        // advance the stream
-                        self.input_stream = next_input;
-                        self.offset += next_offset;
-                        Some(tok)
+                        }
                     }
                 }
         };
@@ -423,7 +502,12 @@ fn codegen(token_metadata: TokenizerVariants) -> syn::Result<TokenStream> {
             .into_iter()
             .map(
                 |TokenVariantMetadata { attr_metadata, .. }| match attr_metadata {
-                    LexerAttributeMetadata::Matches(mam) => mam.pattern.regex,
+                    LexerAttributeMetadata::Matches(MatchesAttributeMetadata {
+                        pattern, ..
+                    }) => pattern.regex,
+                    LexerAttributeMetadata::Skip(SkipAttributeMetadata { pattern }) => {
+                        pattern.regex
+                    }
                 },
             )
             .collect::<Vec<_>>();
@@ -444,7 +528,7 @@ fn codegen(token_metadata: TokenizerVariants) -> syn::Result<TokenStream> {
 }
 
 /// The dispatcher method for tokens annotated with the Relex derive.
-#[proc_macro_derive(Relex, attributes(matches))]
+#[proc_macro_derive(Relex, attributes(matches, skip))]
 pub fn relex(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
