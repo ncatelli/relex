@@ -49,21 +49,21 @@ use relex_derive::Relex;
 
 #[derive(Relex, Debug, PartialEq)]
 pub enum Token {
-    #[regex(r"[0-9]+[.][0-9]+", |lex: &str| { lex.parse::<f32>().ok() })]
+    #[matches(r"[0-9]+[.][0-9]+", |lex: &str| { lex.parse::<f32>().ok() })]
     FloatLit(f32),
-    #[regex(r"[0-9]+", |lex: &str| { lex.parse::<i32>().ok() })]
+    #[matches(r"[0-9]+", |lex: &str| { lex.parse::<i32>().ok() })]
     IntLit(i32),
-    #[regex("\"[a-zA-Z]+\"", |lex: &str| { Some(lex.trim_matches('\"').to_string()) })]
+    #[matches("\"[a-zA-Z]+\"", |lex: &str| { Some(lex.trim_matches('\"').to_string()) })]
     StringLit(String),
-    #[regex(r"+")]
+    #[matches(r"+")]
     Plus,
-    #[regex(r"-")]
+    #[matches(r"-")]
     Minus,
-    #[regex("\n")]
+    #[matches("\n")]
     Newline,
-    #[regex(" |\t")]
+    #[skip(" |\t")]
     WhiteSpace,
-    #[regex("[.]")]
+    #[matches("[.]")]
     Dot,
 }
 
@@ -75,4 +75,27 @@ fn main() -> Result<(), String> {
 
     Ok(())
 }
+```
+
+#### Attributes
+##### matches
+`matches` attempts to match a regular expression, associating the match with a corresponding token. Additionally, an optional closure can be passed that returns an `Option<T>` for converting the match to the corresponding field enclosed on the token's variant.
+
+```rust
+...
+#[matches(r"+")]
+Plus,
+#[matches(r"[0-9]+[.][0-9]+", |lex: &str| { lex.parse::<f32>().ok() })]
+FloatLit(f32),
+...
+```
+
+##### skip
+`skip` attempts to match a regular expression of which will the match will then be ignored from the token stream. An example of such a use case would be whitespace in C. 
+
+```rust
+...
+#[skip(" |\t")]
+WhiteSpace,
+...
 ```
