@@ -1,8 +1,12 @@
 use relex_derive::Relex;
 
+fn float_validator(lexed_input: &str) -> Option<f32> {
+    lexed_input.parse::<f32>().ok()
+}
+
 #[derive(Relex, Debug, PartialEq)]
 pub enum Token {
-    #[matches(r"[0-9]+[.][0-9]+", |lex: &str| { lex.parse::<f32>().ok() })]
+    #[matches(r"[0-9]+[.][0-9]+", float_validator)]
     FloatLit(f32),
     #[matches(r"[0-9]+", |lex: &str| { lex.parse::<i32>().ok() })]
     IntLit(i32),

@@ -5,9 +5,13 @@ A lexer generator for the first principles project.
 ```rust
 use relex_derive::Relex;
 
+fn float_validator(lexed_input: &str) -> Option<f32> {
+    lexed_input.parse::<f32>().ok()
+}
+
 #[derive(Relex, Debug, PartialEq)]
 pub enum Token {
-    #[matches(r"[0-9]+[.][0-9]+", |lex: &str| { lex.parse::<f32>().ok() })]
+    #[matches(r"[0-9]+[.][0-9]+", float_validator)]
     FloatLit(f32),
     #[matches(r"[0-9]+", |lex: &str| { lex.parse::<i32>().ok() })]
     IntLit(i32),
@@ -37,7 +41,7 @@ fn main() -> Result<(), String> {
 
 ### Attributes
 #### matches
-`matches` attempts to match a regular expression, associating the match with a corresponding token. Additionally, an optional closure can be passed that returns an `Option<T>` for converting the match to the corresponding field enclosed on the token's variant.
+`matches` attempts to match a regular expression, associating the match with a corresponding token. Additionally, an optional closure or function can be passed that takes a single `&str` parameter and returns an `Option<T>` for converting the match to the corresponding field enclosed on the token's variant.
 
 ```rust
 ...
