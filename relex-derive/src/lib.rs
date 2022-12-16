@@ -22,20 +22,33 @@ impl SpannedRegex {
     }
 }
 
+#[derive(Debug)]
+enum OptionalAction {
+    Closure(ExprClosure),
+    Fn(Ident),
+    None,
+}
+
 /// Parsed metatdata for the `Matches` attribute.
 struct MatchesAttributeMetadata {
     /// Represents the defined regular expression used to match a token.
     pattern: SpannedRegex,
     /// An optional action for converting the matched pattern to a
     /// corresponding token field.
-    action: Option<ExprClosure>,
+    action: OptionalAction,
 }
 
 impl std::fmt::Debug for MatchesAttributeMetadata {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let action_field_data = match &self.action {
+            OptionalAction::Closure(c) => format!("Closure({:?})", c.to_token_stream()),
+            OptionalAction::Fn(f) => format!("Fn({:?})", f.to_token_stream()),
+            other => format!("{:?}", other),
+        };
+
         f.debug_struct("MatchesAttributeMetadata")
             .field("pattern", &self.pattern)
-            .field("action", &self.action.to_token_stream())
+            .field("action", &action_field_data)
             .finish()
     }
 }
@@ -58,16 +71,27 @@ impl Parse for MatchesAttributeMetadata {
         if input.is_empty() {
             syn::Result::Ok(MatchesAttributeMetadata {
                 pattern: spanned_regex,
-                action: None,
+                action: OptionalAction::None,
             })
         } else {
             let _separator: Token![,] = input.parse()?;
-            let action: ExprClosure = input.parse()?;
-
-            syn::Result::Ok(MatchesAttributeMetadata {
-                pattern: spanned_regex,
-                action: Some(action),
-            })
+            let expr_closure_action = input.parse::<ExprClosure>();
+            match expr_closure_action {
+                Ok(action) => syn::Result::Ok(MatchesAttributeMetadata {
+                    pattern: spanned_regex,
+                    action: OptionalAction::Closure(action),
+                }),
+                Err(_) => {
+                    let action = input.parse::<Ident>().map_err(|e| {
+                        let span = e.span();
+                        syn::Error::new(span, "expected either a closure or a function identifier")
+                    })?;
+                    syn::Result::Ok(MatchesAttributeMetadata {
+                        pattern: spanned_regex,
+                        action: OptionalAction::Fn(action),
+                    })
+                }
+            }
         }
     }
 }
@@ -193,15 +217,12 @@ fn parse(input: DeriveInput) -> Result<TokenizerVariants, syn::Error> {
                     LexerAttributeKind::Matches => {
                         attr.parse_args_with(MatchesAttributeMetadata::parse)
                             .and_then(|mam| {
-                                let mam_output = mam.action.as_ref().map(|action| &action.output);
-                                match (variant_fields.clone(), mam_output) {
+                                match variant_fields.clone() {
                                     // an unamed struct with one field
-                                    (Fields::Unnamed(f), Some(_)) if f.unnamed.len() == 1 => {
-                                        Ok(mam)
-                                    }
+                                    Fields::Unnamed(f) if f.unnamed.len() == 1 => Ok(mam),
                                     // an empty filed
-                                    (Fields::Unit, None) => Ok(mam),
-                                    (l, _) => Err(syn::Error::new(
+                                    Fields::Unit => Ok(mam),
+                                    l => Err(syn::Error::new(
                                         l.span(),
                                         format!(
                                             "variant({}) expects exactly 1 unnamed field, got {}",
@@ -379,13 +400,19 @@ impl CodeGenTokenStream {
                 )| match &attr_metadata {
                     LexerAttributeMetadata::Matches(MatchesAttributeMetadata { action: optional_action , ..}) => {
                         match optional_action {
-                            Some(action) => quote! {
+                            OptionalAction::Closure(action) => quote! {
                                 #expr_id => match (#action)(val) {
                                     Some(res) => TokenStreamOutput::Match(#tok_enum_ident::#variant_ident(res)),
                                     None => TokenStreamOutput::NoMatch,
                                 }
                             },
-                            None => quote! {
+                            OptionalAction::Fn(action) => quote! {
+                                #expr_id => match (#action)(val) {
+                                    Some(res) => TokenStreamOutput::Match(#tok_enum_ident::#variant_ident(res)),
+                                    None => TokenStreamOutput::NoMatch,
+                                }
+                            },
+                            OptionalAction::None => quote! {
                                 #expr_id => TokenStreamOutput::Match(#tok_enum_ident::#variant_ident),
                             },
                         }
