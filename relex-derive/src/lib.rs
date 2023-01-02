@@ -137,6 +137,7 @@ impl Parse for SkipAttributeMetadata {
 enum LexerAttributeKind {
     Matches,
     Skip,
+    Eoi,
 }
 
 /// Represents all supported attributes for the token.
@@ -144,6 +145,7 @@ enum LexerAttributeKind {
 enum LexerAttributeMetadata {
     Matches(MatchesAttributeMetadata),
     Skip(SkipAttributeMetadata),
+    Eoi,
 }
 
 /// Stores all supported lexer attributes for a given Token variant.
@@ -209,6 +211,8 @@ fn parse(input: DeriveInput) -> Result<TokenizerVariants, syn::Error> {
                         Some((LexerAttributeKind::Matches, attr))
                     } else if attr.path.is_ident("skip") {
                         Some((LexerAttributeKind::Skip, attr))
+                    } else if attr.path.is_ident("eoi") {
+                        Some((LexerAttributeKind::Eoi, attr))
                     } else {
                         None
                     }
@@ -237,6 +241,7 @@ fn parse(input: DeriveInput) -> Result<TokenizerVariants, syn::Error> {
                     LexerAttributeKind::Skip => attr
                         .parse_args_with(SkipAttributeMetadata::parse)
                         .map(LexerAttributeMetadata::Skip),
+                    LexerAttributeKind::Eoi => Ok(LexerAttributeMetadata::Eoi),
                 });
 
             let mut variant_match_attr = attr_kind.collect::<Result<Vec<_>, _>>()?;
@@ -375,6 +380,8 @@ impl ToTokens for CodeGenProgram {
 /// `proc-macro::TokenStream` to provide a stream of lexed tokens at runtime.
 struct CodeGenTokenStream {
     matchers: TokenStream,
+    // if `None` a standard `None` is returned.
+    eoi: Option<TokenStream>,
 }
 
 impl CodeGenTokenStream {
@@ -390,7 +397,7 @@ impl CodeGenTokenStream {
 
                 (id, other)
             })
-            .map(
+            .flat_map(
                 |(
                     expr_id,
                     TokenVariantMetadata {
@@ -400,37 +407,60 @@ impl CodeGenTokenStream {
                 )| match &attr_metadata {
                     LexerAttributeMetadata::Matches(MatchesAttributeMetadata { action: optional_action , ..}) => {
                         match optional_action {
-                            OptionalAction::Closure(action) => quote! {
+                            OptionalAction::Closure(action) => Some(quote! {
                                 #expr_id => match (#action)(val) {
                                     Some(res) => TokenStreamOutput::Match(#tok_enum_ident::#variant_ident(res)),
                                     None => TokenStreamOutput::NoMatch,
                                 }
-                            },
-                            OptionalAction::Fn(action) => quote! {
+                            }),
+                            OptionalAction::Fn(action) => Some(quote! {
                                 #expr_id => match (#action)(val) {
                                     Some(res) => TokenStreamOutput::Match(#tok_enum_ident::#variant_ident(res)),
                                     None => TokenStreamOutput::NoMatch,
                                 }
-                            },
-                            OptionalAction::None => quote! {
+                            }),
+                            OptionalAction::None => Some(quote! {
                                 #expr_id => TokenStreamOutput::Match(#tok_enum_ident::#variant_ident),
-                            },
+                            }),
                         }
                     }
-                    LexerAttributeMetadata::Skip(_) => quote! {
+                    LexerAttributeMetadata::Skip(_) => Some(quote! {
                         #expr_id => TokenStreamOutput::Skip(#tok_enum_ident::#variant_ident),
-                    },
+                    }),
+                    LexerAttributeMetadata::Eoi => None,
                 },
             )
             .collect::<TokenStream>();
 
-        Self { matchers }
+        let eoi = token_metadata
+            .variant_metadata
+            .iter()
+            .find(|tvm| matches!(tvm.attr_metadata, LexerAttributeMetadata::Eoi))
+            .map(|tvm| {
+                let variant_ident = &tvm.ident;
+                quote! {
+                    #tok_enum_ident::#variant_ident,
+                }
+            });
+
+        Self { matchers, eoi }
     }
 }
 
 impl ToTokens for CodeGenTokenStream {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let expression_matchers = &self.matchers;
+
+        let eoi_handler = if let Some(eoi_variant) = &self.eoi {
+            quote! {
+                let end_offset = self.offset;
+                if self.input_stream.is_empty() {
+                    return Some(SpannedToken::new(Span::from(end_offset..end_offset+1), #eoi_variant));
+                }
+            }
+        } else {
+            quote! {}
+        };
 
         let token_stream = quote! {
                 enum TokenStreamOutput<T> {
@@ -459,6 +489,8 @@ impl ToTokens for CodeGenTokenStream {
                     type Item = SpannedToken;
 
                     fn next(&mut self) -> Option<Self::Item> {
+                        #eoi_handler
+
                         loop {
                             let res = regex_runtime::run::<1>(&self.program, self.input_stream);
 
@@ -527,14 +559,15 @@ fn codegen(token_metadata: TokenizerVariants) -> syn::Result<TokenStream> {
         let prog_patterns = token_metadata
             .variant_metadata
             .into_iter()
-            .map(
+            .flat_map(
                 |TokenVariantMetadata { attr_metadata, .. }| match attr_metadata {
                     LexerAttributeMetadata::Matches(MatchesAttributeMetadata {
                         pattern, ..
-                    }) => pattern.regex,
+                    }) => Some(pattern.regex),
                     LexerAttributeMetadata::Skip(SkipAttributeMetadata { pattern }) => {
-                        pattern.regex
+                        Some(pattern.regex)
                     }
+                    LexerAttributeMetadata::Eoi => None,
                 },
             )
             .collect::<Vec<_>>();
@@ -555,7 +588,7 @@ fn codegen(token_metadata: TokenizerVariants) -> syn::Result<TokenStream> {
 }
 
 /// The dispatcher method for tokens annotated with the Relex derive.
-#[proc_macro_derive(Relex, attributes(matches, skip))]
+#[proc_macro_derive(Relex, attributes(matches, skip, eoi))]
 pub fn relex(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
