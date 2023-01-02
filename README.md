@@ -27,12 +27,17 @@ pub enum Token {
     WhiteSpace,
     #[matches("[.]")]
     Dot,
+    #[eoi]
+    Eoi,
 }
 
 fn main() -> Result<(), String> {
     let stream = token_stream_from_input("2 + 12-3 + 45.0+ 4\n\t\"hello\"")?;
     for token in stream {
         println!("{:?}", token);
+        if token.variant == Token::Eoi {
+            break;
+        }
     }
 
     Ok(())
@@ -59,5 +64,15 @@ FloatLit(f32),
 ...
 #[skip(" |\t")]
 WhiteSpace,
+...
+```
+
+#### eoi
+`eoi` provides an override for a custom EOI/EOF variant on the token stream, allowing a user to define a custom alternative to the standard `None`. 
+
+```rust
+...
+#[eoi]
+Eoi,
 ...
 ```
