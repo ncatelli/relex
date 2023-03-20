@@ -251,7 +251,7 @@ fn parse(input: DeriveInput) -> Result<TokenizerVariants, syn::Error> {
             } else {
                 Err(syn::Error::new(
                     variant_span,
-                    "expect exactly one match attribute specified",
+                    "expects exactly one attribute to be specified",
                 ))
             }
         })
