@@ -1,10 +1,10 @@
-use relex_derive::Relex;
+use relex_derive::{Relex, VariantKind};
 
 fn float_validator(lexed_input: &str) -> Option<f32> {
     lexed_input.parse::<f32>().ok()
 }
 
-#[derive(Relex, Debug, PartialEq)]
+#[derive(Relex, VariantKind, Debug, PartialEq)]
 pub enum Token {
     #[matches(r"[0-9]+[.][0-9]+", float_validator)]
     FloatLit(f32),
@@ -29,7 +29,8 @@ pub enum Token {
 fn main() -> Result<(), String> {
     let stream = token_stream_from_input("2 + 12-3 + 45.0+ 4\n\t\"hello\"")?;
     for token in stream {
-        println!("{:?}", token);
+        let kind = token.variant.to_variant_kind();
+        println!("{:?} {:?}", kind, token);
         if token.variant == Token::Eoi {
             break;
         }

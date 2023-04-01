@@ -1,13 +1,11 @@
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, ToTokens};
+use quote::{format_ident, quote, ToTokens};
 use syn::{
     parse::{Parse, ParseStream},
     parse_macro_input,
     spanned::Spanned,
     Data, DataEnum, DeriveInput, ExprClosure, Fields, Ident, LitStr, Token,
 };
-
-use regex_compiler::bytecode::ToBytecode;
 
 /// Represent a regex ast with an associated span.
 #[derive(Debug)]
@@ -267,8 +265,6 @@ struct CodeGenHeader;
 impl ToTokens for CodeGenHeader {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let header_stream = quote! {
-            use regex_runtime::{Instructions, SaveGroupSlot};
-
             #[derive(Debug, Clone, Copy, PartialEq, Eq)]
             pub struct Span {
                 start: usize,
@@ -294,7 +290,16 @@ impl ToTokens for CodeGenHeader {
             }
         };
 
-        tokens.extend(header_stream)
+        let variant_kind_stream = quote! {
+            pub trait RelexVariantKindRepresentable {
+                type Output;
+
+                fn to_variant_kind(&self) -> Self::Output;
+            }
+        };
+
+        tokens.extend(header_stream);
+        tokens.extend(variant_kind_stream);
     }
 }
 
@@ -337,7 +342,7 @@ impl<'a> ToTokens for CodeGenSpannedToken<'a> {
             pub fn token_stream_from_input(input: &str) -> Result<TokenStream<'_>, String> {
                 use regex_runtime::bytecode::FromBytecode;
 
-                let program = Instructions::from_bytecode(PROG_BINARY).map_err(|e| e.to_string())?;
+                let program = regex_runtime::Instructions::from_bytecode(PROG_BINARY).map_err(|e| e.to_string())?;
                 Ok(TokenStream::new(program, input))
             }
         };
@@ -359,6 +364,8 @@ impl CodeGenProgram {
 
 impl ToTokens for CodeGenProgram {
     fn to_tokens(&self, tokens: &mut TokenStream) {
+        use regex_compiler::bytecode::ToBytecode;
+
         let instructions = self.program.to_bytecode();
 
         let byte_count = instructions.len();
@@ -471,12 +478,12 @@ impl ToTokens for CodeGenTokenStream {
 
                 pub struct TokenStream<'a> {
                     input_stream: &'a str,
-                    program: Instructions,
+                    program: regex_runtime::Instructions,
                     offset: usize,
                 }
 
                 impl<'a> TokenStream<'a> {
-                    pub fn new(program: Instructions, input_stream: &'a str) -> Self {
+                    pub fn new(program: regex_runtime::Instructions, input_stream: &'a str) -> Self {
                         Self {
                             input_stream,
                             program,
@@ -496,7 +503,7 @@ impl ToTokens for CodeGenTokenStream {
 
                             let (tok, next_input, next_offset) = match res {
                                 Some(
-                                    [SaveGroupSlot::Complete {
+                                    [regex_runtime::SaveGroupSlot::Complete {
                                         expression_id,
                                         start,
                                         end,
@@ -555,7 +562,7 @@ fn codegen(token_metadata: TokenizerVariants) -> syn::Result<TokenStream> {
 
     // Compile all regular expressions into the state machine and convert to a
     // binary representation for embedding.
-    let codegen_program = {
+    let codegen_variant_matcher = {
         let prog_patterns = token_metadata
             .variant_metadata
             .into_iter()
@@ -582,9 +589,81 @@ fn codegen(token_metadata: TokenizerVariants) -> syn::Result<TokenStream> {
         .to_token_stream()
         .into_iter()
         .chain(CodeGenSpannedToken::new(tok_enum_ident).to_token_stream())
-        .chain(codegen_program.to_token_stream())
+        .chain(codegen_variant_matcher.to_token_stream())
         .chain(codegen_token_stream.to_token_stream())
         .collect())
+}
+
+/// Generates the enum used to capture all token variants at runtime.
+struct CodeGenTokenVariantKind<'a> {
+    enum_ident: &'a Ident,
+    data_enum: &'a DataEnum,
+}
+
+impl<'a> CodeGenTokenVariantKind<'a> {
+    fn new(enum_ident: &'a Ident, data_enum: &'a DataEnum) -> Self {
+        Self {
+            enum_ident,
+            data_enum,
+        }
+    }
+}
+
+impl<'a> ToTokens for CodeGenTokenVariantKind<'a> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        use syn::Variant;
+
+        let tok_enum_ident = self.enum_ident;
+        let DataEnum { variants, .. } = self.data_enum;
+
+        let tok_variant_kind_ident = format_ident!("{}VariantKind", tok_enum_ident);
+
+        let enum_fields = variants
+            .iter()
+            .map(|Variant { ident, .. }| quote! {#ident,})
+            .collect::<TokenStream>();
+
+        let variant_kind_struct = quote! {
+            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+            pub enum #tok_variant_kind_ident {
+                #enum_fields
+            }
+        };
+
+        let conversion_patterns = variants
+            .iter()
+            .map(|Variant { ident, fields, .. }| match fields {
+                Fields::Named(_) => quote! {
+                    Self::#ident{..} => Self::Output::#ident,
+                },
+                Fields::Unnamed(_) => quote! {
+                    Self::#ident(..) => Self::Output::#ident,
+                },
+                Fields::Unit => quote! {
+                    Self::#ident => Self::Output::#ident,
+                },
+            })
+            .collect::<TokenStream>();
+
+        let variant_kind_impl = quote! {
+            impl RelexVariantKindRepresentable for #tok_enum_ident {
+                type Output = #tok_variant_kind_ident;
+
+                fn to_variant_kind(&self) -> Self::Output {
+                    match self {
+                        #conversion_patterns
+                    }
+                }
+            }
+        };
+
+        tokens.extend(variant_kind_struct);
+        tokens.extend(variant_kind_impl);
+    }
+}
+
+fn codegen_variants(ident: &Ident, data_enum: DataEnum) -> syn::Result<TokenStream> {
+    Ok(CodeGenTokenVariantKind::new(ident, &data_enum).to_token_stream())
 }
 
 /// The dispatcher method for tokens annotated with the Relex derive.
@@ -594,6 +673,27 @@ pub fn relex(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     parse(input)
         .and_then(codegen)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Dispatcher for generating variant kinds off of an enum.
+#[proc_macro_derive(VariantKind)]
+pub fn relex_variant_kind(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+
+    let input_span = input.span();
+    let tok_enum_name = input.ident;
+    let data_enum = match input.data {
+        Data::Enum(data_enum) => Ok(data_enum),
+        _ => Err(syn::Error::new(
+            input_span,
+            "derive macro only works on enums",
+        )),
+    };
+
+    data_enum
+        .and_then(|data_enum| codegen_variants(&tok_enum_name, data_enum))
         .unwrap_or_else(syn::Error::into_compile_error)
         .into()
 }
