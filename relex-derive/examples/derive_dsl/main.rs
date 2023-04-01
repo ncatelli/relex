@@ -1,10 +1,10 @@
-use relex_derive::Relex;
+use relex_derive::{Relex, VariantKind};
 
 fn float_validator(lexed_input: &str) -> Option<f32> {
     lexed_input.parse::<f32>().ok()
 }
 
-#[derive(Relex, Debug, PartialEq)]
+#[derive(Relex, VariantKind, Debug, PartialEq)]
 pub enum Token {
     #[matches(r"[0-9]+[.][0-9]+", float_validator)]
     FloatLit(f32),
