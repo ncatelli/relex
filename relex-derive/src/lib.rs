@@ -291,7 +291,10 @@ impl ToTokens for CodeGenHeader {
         };
 
         let variant_kind_stream = quote! {
-            pub trait RelexVariantKindRepresentable {
+            /// A trait for outputting a fieldless, copyable representation of
+            /// the token variants for pattern matching.
+            pub trait VariantKindRepresentable {
+                /// The representation type of the token enum's variants.
                 type Output;
 
                 fn to_variant_kind(&self) -> Self::Output;
@@ -646,7 +649,7 @@ impl<'a> ToTokens for CodeGenTokenVariantKind<'a> {
             .collect::<TokenStream>();
 
         let variant_kind_impl = quote! {
-            impl RelexVariantKindRepresentable for #tok_enum_ident {
+            impl VariantKindRepresentable for #tok_enum_ident {
                 type Output = #tok_variant_kind_ident;
 
                 fn to_variant_kind(&self) -> Self::Output {

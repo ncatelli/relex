@@ -29,8 +29,7 @@ pub enum Token {
 fn main() -> Result<(), String> {
     let stream = token_stream_from_input("2 + 12-3 + 45.0+ 4\n\t\"hello\"")?;
     for token in stream {
-        let kind = token.variant.to_variant_kind();
-        println!("{:?} {:?}", kind, token);
+        println!("{:?}", token);
         if token.variant == Token::Eoi {
             break;
         }
