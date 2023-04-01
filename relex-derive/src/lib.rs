@@ -291,7 +291,7 @@ impl ToTokens for CodeGenHeader {
         };
 
         let variant_kind_stream = quote! {
-            /// A trait for outputting a fieldless, copyable representation of
+            /// A trait for outputting a field-less, copyable representation of
             /// the token variants for pattern matching.
             pub trait VariantKindRepresentable {
                 /// The representation type of the token enum's variants.
