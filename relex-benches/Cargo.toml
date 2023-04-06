@@ -1,0 +1,17 @@
+[package]
+name = "relex-benches"
+version = "0.1.0"
+edition = "2021"
+workspace = ".."
+
+[[bench]]
+name = "capturing_grammar"
+path = "benches/capturing_grammar.rs"
+harness = false
+
+[dev-dependencies]
+criterion = "0.4"
+
+[dependencies]
+regex-runtime = { git = "https://github.com/ncatelli/regex", branch = "main" }
+relex-derive = { path = "../relex-derive" }
