@@ -32,8 +32,6 @@ fn short_input_stream(c: &mut Criterion) {
 
     let input = "0 4 0 4 1 - 8 5 8 9 7 - 7 4 1 2 7 + 6 7 6 8 6 4 - 6 4 8";
 
-    let mut sink = Vec::with_capacity(128);
-
     [1, 2, 4, 16].into_iter().for_each(|sample_size| {
         group.throughput(Throughput::Elements(sample_size as u64));
         group.bench_with_input(
@@ -41,15 +39,16 @@ fn short_input_stream(c: &mut Criterion) {
             &(sample_size),
             |b, &input_size| {
                 b.iter(|| {
+                    let mut cnt = 0;
                     let stream = token_stream_from_input(black_box(input))
                         .unwrap()
                         .take(input_size);
 
-                    for tok in stream {
-                        sink.push(tok);
+                    for _tok in stream {
+                        cnt += 1;
                     }
 
-                    assert_eq!(sink.len(), sample_size)
+                    assert_eq!(cnt, sample_size)
                 })
             },
         );
