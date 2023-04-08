@@ -205,11 +205,11 @@ fn parse(input: DeriveInput) -> Result<TokenizerVariants, syn::Error> {
                 .attrs
                 .iter()
                 .filter_map(|attr| {
-                    if attr.path.is_ident("matches") {
+                    if attr.path().is_ident("matches") {
                         Some((LexerAttributeKind::Matches, attr))
-                    } else if attr.path.is_ident("skip") {
+                    } else if attr.path().is_ident("skip") {
                         Some((LexerAttributeKind::Skip, attr))
-                    } else if attr.path.is_ident("eoi") {
+                    } else if attr.path().is_ident("eoi") {
                         Some((LexerAttributeKind::Eoi, attr))
                     } else {
                         None
